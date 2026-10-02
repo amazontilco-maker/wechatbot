@@ -1,0 +1,19 @@
+{
+  "name": "wechatbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Supplier WeChat bridge: logs messages to SQLite, lets Claude summarize and post approved replies",
+  "engines": { "node": ">=22.13" },
+  "bin": { "wb": "src/cli.js" },
+  "scripts": {
+    "bridge": "node src/bridge.js",
+    "wb": "node src/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "wechaty": "^1.20.2",
+    "wechaty-puppet-wechat4u": "^1.14.13"
+  }
+}
