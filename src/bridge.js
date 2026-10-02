@@ -1,4 +1,4 @@
-// Long-running process: logs every WeChat message to SQLite and sends approved outbox items.
+// Long-running, READ-ONLY listener: logs every WeChat message to SQLite. It never sends anything.
 // UNOFFICIAL: uses a personal-account puppet. This violates WeChat's ToS; the account can be restricted.
 import { WechatyBuilder, types } from 'wechaty'
 import qrcode from 'qrcode-terminal'
@@ -6,9 +6,7 @@ import { openDb, upsertConv, addMessage } from './db.js'
 
 const db = openDb()
 const PUPPET = process.env.WB_PUPPET || 'wechaty-puppet-wechat4u'
-const POLL_MS = 3000
-const MIN_GAP_MS = 2000 // random 2-6s between sends, to look less robotic
-const MAX_GAP_MS = 6000
+
 
 const TYPE_NAMES = {
   [types.Message.Text]: 'text',
@@ -58,33 +56,4 @@ bot
     }
   })
 
-let sending = false
-async function flushOutbox() {
-  if (sending || !bot.isLoggedIn) return
-  sending = true
-  try {
-    const rows = db
-      .prepare("SELECT * FROM outbox WHERE status = 'approved' ORDER BY id")
-      .all()
-    for (const row of rows) {
-      try {
-        const target = row.conv_id.startsWith('@@')
-          ? await bot.Room.find({ id: row.conv_id })
-          : await bot.Contact.find({ id: row.conv_id })
-        if (!target) throw new Error('conversation not found on WeChat')
-        await target.say(row.text)
-        db.prepare("UPDATE outbox SET status='sent', sent=? WHERE id=?").run(Date.now(), row.id)
-        console.log(`sent #${row.id}`)
-      } catch (e) {
-        db.prepare("UPDATE outbox SET status='failed', error=? WHERE id=?").run(String(e.message || e), row.id)
-        console.error(`send #${row.id} failed`, e)
-      }
-      await new Promise((r) => setTimeout(r, MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS)))
-    }
-  } finally {
-    sending = false
-  }
-}
-
 await bot.start()
-setInterval(flushOutbox, POLL_MS)

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wb: the interface Claude drives. Read digests, draft replies, approve to send.
+// wb: read-only interface Claude uses to read conversations and their context.
 import { openDb, findConv } from './db.js'
 
 const [cmd, ...args] = process.argv.slice(2)
@@ -72,47 +72,18 @@ const commands = {
     out('Marked read.')
   },
 
-  // wb draft <conv> <text...> : queue a draft. NOTHING is sent until `wb approve`.
-  draft() {
-    const c = findConv(db, args[0])
-    const text = args.slice(1).join(' ').trim()
-    if (!text) throw new Error('empty message')
-    const { lastInsertRowid } = db
-      .prepare("INSERT INTO outbox (conv_id, text, status, created) VALUES (?, ?, 'draft', ?)")
-      .run(c.id, text, Date.now())
-    out(`Draft #${lastInsertRowid} -> ${c.name}: ${text}`)
-  },
-
-  // wb outbox : list drafts/pending/recent
-  outbox() {
+  // wb search <text...> : find messages across all conversations
+  search() {
+    const q = args.join(' ').trim()
+    if (!q) throw new Error('empty query')
     const rows = db
       .prepare(
-        `SELECT o.*, c.name FROM outbox o JOIN convs c ON c.id = o.conv_id
-         WHERE o.status IN ('draft','approved','failed') ORDER BY o.id`
+        `SELECT m.*, c.name AS conv FROM messages m JOIN convs c ON c.id = m.conv_id
+         WHERE m.text LIKE ? ESCAPE '\\' ORDER BY m.ts DESC LIMIT 50`
       )
-      .all()
-    if (!rows.length) return out('Outbox empty.')
-    for (const r of rows) out(`#${r.id} [${r.status}] -> ${r.name}: ${r.text}${r.error ? `  (error: ${r.error})` : ''}`)
-  },
-
-  // wb approve <id...|all> : release drafts to the bridge for sending (only run after the user confirms)
-  approve() {
-    const ids = args[0] === 'all'
-      ? db.prepare("SELECT id FROM outbox WHERE status = 'draft'").all().map((r) => r.id)
-      : args.map(Number)
-    for (const id of ids) {
-      const r = db.prepare("UPDATE outbox SET status='approved' WHERE id = ? AND status IN ('draft','failed')").run(id)
-      out(r.changes ? `#${id} approved; bridge will send it.` : `#${id} not found or not a draft.`)
-    }
-  },
-
-  // wb discard <id...|all>
-  discard() {
-    const ids = args[0] === 'all'
-      ? db.prepare("SELECT id FROM outbox WHERE status = 'draft'").all().map((r) => r.id)
-      : args.map(Number)
-    for (const id of ids) db.prepare("UPDATE outbox SET status='discarded' WHERE id = ? AND status = 'draft'").run(id)
-    out('Discarded.')
+      .all(`%${q.replace(/[%_\\]/g, '\\$&')}%`)
+    for (const m of rows.reverse()) out(`[${fmtTime(m.ts)}] ${m.conv} | ${m.direction === 'out' ? 'ME' : m.sender}: ${m.text}`)
+    if (!rows.length) out('No matches.')
   },
 }
 

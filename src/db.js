@@ -26,15 +26,6 @@ export function openDb(path = DB_PATH) {
       ts INTEGER NOT NULL             -- unix ms
     );
     CREATE INDEX IF NOT EXISTS idx_msg_conv_ts ON messages(conv_id, ts);
-    CREATE TABLE IF NOT EXISTS outbox (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      conv_id TEXT NOT NULL REFERENCES convs(id),
-      text TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'draft', -- draft | approved | sent | failed | discarded
-      error TEXT,
-      created INTEGER NOT NULL,
-      sent INTEGER
-    );
   `)
   return db
 }
