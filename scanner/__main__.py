@@ -211,10 +211,18 @@ def cmd_send(args):
         time.sleep(TYPE_WAIT)
         dev.type_text(text)
         time.sleep(TYPE_WAIT)
-        lines = ocr(dev.screenshot())
+        img = dev.screenshot()
+        lines = ocr(img)
         button = find_send_button(lines, w, h)
         if not button or not typed_text_matches(lines, button, text, w):
+            import cv2
+            cv2.imwrite("send_check.png", img)
             dev.delete_chars(len(text) + 10)
+            why = "no Send button found" if not button else "the text in the box didn't match"
+            print(f"Check failed: {why}. Screenshot saved as send_check.png. Text seen in the lower screen:")
+            for l in sorted(lines, key=lambda l: (l.y1, l.x1)):
+                if l.y1 > h * 0.3:
+                    print(f"  {int(l.x1)}-{int(l.x2)},{int(l.y1)}-{int(l.y2)}  {l.text}")
             outcome.append("Could not confirm the typed text in the input box, so it was cleared. "
                            "Nothing sent. Check the phone.")
             return
