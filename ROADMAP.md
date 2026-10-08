@@ -74,7 +74,9 @@ Merge to `main` when a milestone is done and tested on the real phone.
   listing the shipments; approve & send via M1; re-ask next morning if no reply.
 
 **M6 — Stockout risk** (first version built early, in the web app: Stock risk page reads the .xlsx stock
-workbook, flags SKUs under N days of stock (default 60) by Amazon / on hand / on hand + inbound)
+Google Sheet every 15 min via a read-only service account, flags SKUs under N days of stock (default 60) by
+Amazon / on hand / on hand + inbound, warns when the sheet hasn't been edited for N days.
+Later: pull sales, FBA/AWD stock and inbound from Amazon SP-API (and Walmart) so nobody types them.)
 - From the sheet's sales and stock columns: runs-out date vs ETA, flag gaps, suggest options
   (air, AWD/3PL transfer, slow sales). Drafts only.
 

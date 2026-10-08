@@ -9,6 +9,8 @@ r"""Team web app for the supplier WeChat inbox.
   py -m web stockfile "G:\My Drive\stock.xlsx"   read the stock file from this path (e.g. Google Drive
                                        for desktop); `stockfile --upload` goes back to uploading it in the app
   py -m web stockcheck FILE.xlsx       show which columns each stock tab has and the most urgent SKUs
+  py -m web google KEY.json            install the Google robot login (service account key) and show its email
+  py -m web sheetcheck                 read the linked Google Sheet now and show what was found
 
 Roles: viewer reads chats; sender also writes notes and replies (sending needs approval);
 approver also approves & sends and sees the log; admin also manages logins.
@@ -119,6 +121,59 @@ def cmd_stockfile(args):
     print("Stock tabs found: " + ", ".join(n for n, ok in tabs if ok))
 
 
+def data_dir(args):
+    from pathlib import Path
+    from scanner.store import DEFAULT_DB
+    import os
+    return Path(args.db or os.environ.get("WB_DB") or DEFAULT_DB).resolve().parent
+
+
+def cmd_google(args):
+    import json
+    import shutil
+    from . import gsheet
+    src = args.key.strip('"')
+    try:
+        key = json.loads(open(src, encoding="utf-8").read())
+    except (OSError, ValueError) as e:
+        sys.exit(f"Could not read {src}: {e}")
+    if key.get("type") != "service_account" or not key.get("client_email"):
+        sys.exit("That isn't a service account key (the .json downloaded from Keys > Add key > JSON).")
+    dest = data_dir(args) / gsheet.KEY_NAME
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+    print(f"Saved the robot login to {dest}")
+    print("You can delete the downloaded copy now.")
+    print("\nShare the Google Sheet with this email as Viewer:")
+    print(f"  {key['client_email']}")
+
+
+def cmd_sheetcheck(args):
+    import json
+    from . import gsheet, stock
+    from .db import get_setting
+    db = connect(args.db)
+    sid = get_setting(db, "sheet_id")
+    if not sid:
+        sys.exit("No Google Sheet linked yet. Paste its link on the Stock risk page (Settings).")
+    sync = gsheet.SheetSync(args.db, data_dir(args))
+    problem = sync.refresh()
+    if problem:
+        sys.exit(problem)
+    snap = sync.snapshot(sid)
+    print(f"Read '{snap['title']}' (last edited by {snap['modified_by'] or '?'})")
+    print("Stock tabs: " + ", ".join(t for t, ok in snap["tabs_all"] if ok))
+    chosen = json.loads(get_setting(db, "stock_tabs", "[]"))
+    if not chosen:
+        print("No tabs ticked yet: tick the live tabs on the Stock risk page.")
+    for name in chosen:
+        tab = stock.parse_rows(snap["rows"].get(name, []), name)
+        rows, counts = stock.risk_rows([tab])
+        print(f"\n== {name}: {len(tab.items)} SKUs {('- ' + tab.problem) if tab.problem else ''}")
+        print(f"   out {counts['out']}, critical {counts['critical']}, low {counts['low']}, "
+              f"ok {counts['ok']}, no sales {counts['nosales']}")
+
+
 def cmd_stockcheck(args):
     from string import ascii_uppercase as AZ
     from . import stock
@@ -168,6 +223,10 @@ def main(argv=None):
     k.add_argument("--days", type=int, default=60)
     k.add_argument("--all", action="store_true", help="also tabs that don't look like stock tabs")
     k.set_defaults(fn=cmd_stockcheck)
+    g = sub.add_parser("google")
+    g.add_argument("key")
+    g.set_defaults(fn=cmd_google)
+    sub.add_parser("sheetcheck").set_defaults(fn=cmd_sheetcheck)
     args = p.parse_args(argv)
     args.fn(args)
 

@@ -48,7 +48,7 @@ class AppTest(unittest.TestCase):
                        "VALUES (?, 'ui:SZ Ocean', ?, ?, 'text', ?, ?)", (f"m{i}", s, d, t, 1000 + i))
         db.commit()
         db.close()
-        self.client = TestClient(create_app(self.path))
+        self.client = TestClient(create_app(self.path, background=False))
 
     def tearDown(self):
         stock_file = os.path.join(os.path.dirname(self.path), "stock.xlsx")
@@ -94,7 +94,7 @@ class AppTest(unittest.TestCase):
         self.client.post("/chat/notes", data={"id": "ui:SZ Ocean", "notes": "Ocean forwarder", "csrf": self.csrf(page)})
         self.assertIn("Ocean forwarder", self.client.get("/chat", params={"id": "ui:SZ Ocean"}).text)
 
-        viewer = TestClient(create_app(self.path))
+        viewer = TestClient(create_app(self.path, background=False))
         viewer.post("/login", data={"name": "Vic", "password": "correct horse 1"})
         page = viewer.get("/chat", params={"id": "ui:SZ Ocean"}).text
         self.assertNotIn("Save notes", page)
@@ -114,7 +114,7 @@ class AppTest(unittest.TestCase):
         from web.tests.test_stock import make_workbook
         self.login()
         page = self.client.get("/risk").text
-        self.assertIn("Add the stock file", page)
+        self.assertIn("No stock sheet linked yet", page)
         xlsx = self.path + ".xlsx"
         make_workbook(xlsx)
         try:
@@ -125,7 +125,7 @@ class AppTest(unittest.TestCase):
             os.remove(xlsx)
         self.assertEqual(r.status_code, 200)
         page = r.text
-        self.assertIn("pick the live tabs", page)
+        self.assertIn("Live tabs and rules", page)
         r = self.client.post("/risk/settings", data={"csrf": self.csrf(page), "tabs": ["UK", "USA old"],
                                                      "threshold": "60", "stock": "onhand", "sales": "max"})
         self.assertIn("PMEC-001", r.text)            # 53 days: flagged
@@ -134,7 +134,7 @@ class AppTest(unittest.TestCase):
         self.assertIn("SKUs under 60 days of stock", self.client.get("/").text)
         bad = self.client.post("/risk/upload", data={"csrf": self.csrf(page)}, files={"file": ("x.xlsx", b"hello")})
         self.assertEqual(bad.status_code, 400)
-        viewer = TestClient(create_app(self.path))
+        viewer = TestClient(create_app(self.path, background=False))
         viewer.post("/login", data={"name": "Vic", "password": "correct horse 1"})
         self.assertIn("PMEC-001", viewer.get("/risk").text)
         self.assertNotIn("Save settings", viewer.get("/risk").text)

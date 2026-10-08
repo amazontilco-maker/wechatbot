@@ -4,24 +4,33 @@
 {%- macro n(v) -%}{{ '–' if v is none else ('{:,.0f}'.format(v)) }}{%- endmacro -%}
 {%- macro r(v) -%}{{ '–' if v is none else ('%.1f' % v if v < 10 else '%.0f' % v) }}{%- endmacro -%}
 {% block body %}
-{% set cfg = rep.cfg %}
+{% set cfg = rep.cfg %}{% set src = rep.source %}
 <div class="bar">
   <h1>Stock risk</h1>
   <span class="spacer"></span>
-  {% if rep.ready %}<span class="muted small">File updated {{ rep.mtime }}</span>{% endif %}
+  {% if src.kind == 'sheet' %}
+  <form method="post" action="/risk/refresh" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="ghost">Refresh now</button>
+  </form>
+  {% endif %}
 </div>
 
-{% if rep.error %}<p class="error">{{ rep.error }}</p>{% endif %}
+<div class="source">
+  {% if src.kind == 'sheet' %}
+    <span>Reading <a href="{{ src.url }}" target="_blank" rel="noopener noreferrer"><b>{{ src.title or 'the Google Sheet' }}</b> &#8599;</a></span>
+    {% if src.modified_ms %}<span>edited {{ src.modified_ms | ago }}{% if src.modified_by %} by {{ src.modified_by }}{% endif %}</span>{% endif %}
+    <span>checked {{ src.fetched_ms | ago }}, again every 15 min</span>
+  {% elif src.exists %}
+    <span>Reading an uploaded Excel file{% if from_pc %} on the office PC{% endif %}, saved {{ src.modified_ms | ago }}. No Google Sheet is linked yet.</span>
+  {% else %}
+    <span>No stock sheet linked yet.{% if can_set %} Paste the Google Sheet link under Settings below.{% else %} An approver or admin needs to link it.{% endif %}</span>
+  {% endif %}
+</div>
 
-{% if not rep.path.exists() %}
-  <div class="panel">
-    <h2>Add the stock file</h2>
-    {% if can_set %}
-      <p class="muted">Download the stock file from Google Drive as Excel (.xlsx) and upload it here. Upload again whenever it changes.</p>
-      {% include "risk_upload.html" %}
-    {% else %}<p class="muted">An approver or admin needs to upload the stock file first.</p>{% endif %}
-  </div>
-{% else %}
+{% if rep.error %}<p class="banner bad">{{ rep.error }}</p>{% endif %}
+{% for w in rep.warnings %}<p class="banner warn">{{ w }}</p>{% endfor %}
+
   {% if rep.ready %}
   <div class="kpis">
     <a class="kpi bad" href="/risk?show=flagged"><b>{{ rep.counts.out }}</b><span>out of stock</span><small>under 1 day</small></a>
@@ -66,28 +75,50 @@
   {% for t in rep.tabs if t.problem %}<p class="error">Tab "{{ t.name }}": {{ t.problem }}</p>{% endfor %}
   {% endif %}
 
-  {% if can_set %}
-  <details class="panel settings"{% if not rep.ready %} open{% endif %}>
-    <summary><h2>Settings{% if not rep.ready %}: pick the live tabs{% endif %}</h2></summary>
-    <form method="post" action="/risk/settings">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <p class="muted">Tick the tabs that are current (one per market). Tabs greyed out don't have SKU and sales columns.</p>
-      <div class="tabpick">
-        {% for name, ok in all_tabs %}
-        <label class="{{ '' if ok else 'off' }}"><input type="checkbox" name="tabs" value="{{ name }}"{% if name in cfg.tabs %} checked{% endif %}{% if not ok and name not in cfg.tabs %} disabled{% endif %}> {{ name }}</label>
-        {% endfor %}
-      </div>
-      <div class="row3">
-        <label>Flag under (days) <input name="threshold" type="number" min="1" max="365" value="{{ cfg.threshold }}"></label>
-        <label>Count stock as <select name="stock">{% for k, v in stock_measures.items() %}<option value="{{ k }}"{% if cfg.stock == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
-        <label>Sales per day <select name="sales">{% for k, v in sales_measures.items() %}<option value="{{ k }}"{% if cfg.sales == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
-      </div>
-      <button>Save settings</button>
-    </form>
-    <hr>
-    {% if from_pc %}<p class="muted">The file is read from the office PC: {{ rep.path }}</p>
-    {% else %}<p class="muted">Upload a newer file:</p>{% include "risk_upload.html" %}{% endif %}
+{% if can_set %}
+<details class="panel settings"{% if not rep.ready %} open{% endif %}>
+  <summary><h2>Settings</h2></summary>
+
+  <h3>1. Google Sheet</h3>
+  <form method="post" action="/risk/sheet" class="linkform">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input name="link" value="{{ sheet_link }}" placeholder="Paste the Google Sheet link (https://docs.google.com/spreadsheets/d/...)" aria-label="Google Sheet link">
+    <button>Save link</button>
+  </form>
+  {% if robot %}
+    <p class="hint">The sheet must be shared (as Viewer) with the app's robot account: <b class="copy">{{ robot }}</b></p>
+  {% else %}
+    <p class="hint">The Google robot login isn't set up on the office PC yet. Run <code>py -m web google "path\to\key.json"</code> there first.</p>
+  {% endif %}
+  <p class="hint">To stop reading the sheet, empty the box and press Save link.</p>
+
+  {% if rep.all_tabs %}
+  <h3>2. Live tabs and rules</h3>
+  <form method="post" action="/risk/settings" class="setform">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p class="muted">Tick the tabs that are current (one per market). Greyed-out tabs don't have SKU and sales columns.</p>
+    <div class="tabpick">
+      {% for name, ok in rep.all_tabs %}
+      <label class="{{ '' if ok else 'off' }}"><input type="checkbox" name="tabs" value="{{ name }}"{% if name in cfg.tabs %} checked{% endif %}{% if not ok and name not in cfg.tabs %} disabled{% endif %}> {{ name }}</label>
+      {% endfor %}
+    </div>
+    <div class="row4">
+      <label>Flag under (days) <input name="threshold" type="number" min="1" max="365" value="{{ cfg.threshold }}"></label>
+      <label>Count stock as <select name="stock">{% for k, v in stock_measures.items() %}<option value="{{ k }}"{% if cfg.stock == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Sales per day <select name="sales">{% for k, v in sales_measures.items() %}<option value="{{ k }}"{% if cfg.sales == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Warn if not edited for (days) <input name="stale_days" type="number" min="1" max="60" value="{{ cfg.stale_days }}"></label>
+    </div>
+    <button>Save settings</button>
+  </form>
+  {% endif %}
+
+  {% if src.kind == 'file' %}
+  <details class="sub">
+    <summary>No Google Sheet? Use an Excel file instead</summary>
+    {% if from_pc %}<p class="muted">The file is read from the office PC: {{ src.path }}</p>
+    {% else %}<p class="muted">Upload the .xlsx (again each time it changes):</p>{% include "risk_upload.html" %}{% endif %}
   </details>
   {% endif %}
+</details>
 {% endif %}
 {% endblock %}

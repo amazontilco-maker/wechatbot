@@ -1,4 +1,4 @@
-"""Read the stock planning workbook (.xlsx) and work out days of stock per SKU.
+"""Read the stock planning sheet (Google Sheet rows or an .xlsx) and work out days of stock per SKU.
 
 Each market tab has 2-3 header rows: row 1 = group ("ON HAND STOCK", "INBOUND UNITS FROM
 CHINA", "ONHAND + INBOUND STOCK", ...), row 2 = column name, row 3 (newer tabs) = route
@@ -139,8 +139,20 @@ def header_rows(rows):
     return 2 if sku not in (None, "") else 3
 
 
+def looks_like_stock(top_rows):
+    """True if a tab's first 3 rows have SKU, sales and Amazon stock headers."""
+    if not top_rows:
+        return False
+    cols = find_columns(header_labels(top_rows[:header_rows(top_rows)]))
+    return all(k in cols for k in ("sku", "sales7", "amazon"))
+
+
 def read_tab(ws, name):
-    rows = list(ws.iter_rows(values_only=True))
+    return parse_rows(list(ws.iter_rows(values_only=True)), name)
+
+
+def parse_rows(rows, name):
+    """rows: the whole tab as lists of cell values, top row first."""
     tab = Tab(name)
     if len(rows) < 3:
         tab.problem = "too few rows"
@@ -184,12 +196,8 @@ def tab_names(path):
     """All tabs, each with whether it looks like a stock tab (has SKU and sales headers)."""
     wb = open_workbook(path)
     try:
-        out = []
-        for ws in wb.worksheets:
-            rows = list(ws.iter_rows(min_row=1, max_row=3, values_only=True))
-            cols = find_columns(header_labels(rows[:header_rows(rows)])) if rows else {}
-            out.append((ws.title, all(k in cols for k in ("sku", "sales7", "amazon"))))
-        return out
+        return [(ws.title, looks_like_stock(list(ws.iter_rows(min_row=1, max_row=3, values_only=True))))
+                for ws in wb.worksheets]
     finally:
         wb.close()
 

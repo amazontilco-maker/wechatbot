@@ -47,10 +47,13 @@ py -m web serve
 ```
 Roles: viewer (reads), sender (+ notes, replies that need approval), approver (+ approve & send, activity log), admin (+ logins).
 Manage logins with `py -m web users|setrole|passwd|disable|enable`.
-Stock risk: upload the stock workbook (.xlsx) on the Stock risk page (or point the app at a synced copy with
-`py -m web stockfile "G:\My Drive\file.xlsx"`), tick the live tabs, and it lists SKUs under 60 days of stock
-(days = units / average daily sales, columns found by header per tab). `py -m web stockcheck file.xlsx` shows
-what it found on each tab. Tests: `py -m unittest discover -s web/tests -t .`
+Stock risk reads the stock Google Sheet by itself every 15 minutes (read-only, through a Google service
+account: a robot login the sheet is shared with as Viewer). Set up once on the office PC:
+`py -m web google key.json` (prints the robot email to share the sheet with), then paste the sheet link on the
+Stock risk page (Settings) and tick the live tabs. It flags SKUs under 60 days of stock (days = units / average
+daily sales, columns found by header per tab) and warns when nobody has edited the sheet for 2 days.
+`py -m web sheetcheck` reads it once and prints what it found. Without Google, an .xlsx can be uploaded instead
+(`py -m web stockcheck file.xlsx` checks one). Tests: `py -m unittest discover -s web/tests -t .`
 
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 

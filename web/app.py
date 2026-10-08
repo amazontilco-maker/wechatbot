@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -15,11 +16,12 @@ from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from scanner.store import DEFAULT_DB
 
-from . import auth, stock
-from .db import CATEGORIES, audit, can, connect, get_setting, set_setting
+from . import auth, gsheet, stock
+from .db import CATEGORIES, audit, can, connect, get_setting, now_ms, set_setting
 
 HERE = Path(__file__).resolve().parent
 COOKIE = "wb_session"
@@ -35,6 +37,23 @@ def fmt_ts(ts):
 
 templates.env.filters["ts"] = fmt_ts
 templates.env.filters["q"] = lambda s: quote(str(s), safe="")
+
+
+def ago(ms):
+    """'5 min ago', '3 h ago', '2 days ago'."""
+    if not ms:
+        return "never"
+    sec = max(0, (now_ms() - ms) // 1000)
+    if sec < 90:
+        return "just now"
+    if sec < 5400:
+        return f"{sec // 60} min ago"
+    if sec < 172800:
+        return f"{sec // 3600} h ago"
+    return f"{sec // 86400} days ago"
+
+
+templates.env.filters["ago"] = ago
 
 
 class LoginNeeded(Exception):
@@ -58,8 +77,18 @@ def safe_next(path):
     return path if path and path.startswith("/") and not path.startswith("//") and "\\" not in path else "/"
 
 
-def create_app(db_path=None):
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+def create_app(db_path=None, background=True, sheets_client=None):
+    """background: re-read the stock Google Sheet every 15 minutes while the app runs.
+    sheets_client: stand-in for the Google API (tests)."""
+    @asynccontextmanager
+    async def lifespan(app):
+        if background:
+            app.state.sync.start()
+        yield
+        app.state.sync.stop()
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    sheets_client = sheets_client or gsheet.GoogleSheets
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
     user_limit = auth.RateLimit(5, 15 * 60)    # 5 wrong passwords per name per 15 minutes
     ip_limit = auth.RateLimit(20, 15 * 60)     # 20 per address
@@ -216,11 +245,12 @@ def create_app(db_path=None):
 
     # ---------- stock risk ----------
     data_dir = Path(db_path or os.environ.get("WB_DB") or DEFAULT_DB).resolve().parent
+    sync = gsheet.SheetSync(db_path, data_dir, client_factory=sheets_client)
+    app.state.sync = sync
     cache, cache_lock = {}, threading.Lock()
 
     def stock_file(db):
-        """The workbook to read: a path set on the PC (e.g. a Google Drive for desktop folder),
-        else the last file uploaded in the app."""
+        """Without a Google Sheet: a path set on the PC, else the last file uploaded in the app."""
         return Path(get_setting(db, "stock_path") or data_dir / "stock.xlsx")
 
     def stock_settings(db, request=None):
@@ -228,50 +258,105 @@ def create_app(db_path=None):
         st = q.get("stock") if q.get("stock") in stock.STOCK_MEASURES else get_setting(db, "stock_measure", "onhand")
         sa = q.get("sales") if q.get("sales") in stock.SALES_MEASURES else get_setting(db, "sales_measure", "max")
         return {"tabs": json.loads(get_setting(db, "stock_tabs", "[]")),
-                "threshold": int(get_setting(db, "stock_threshold", "60")), "stock": st, "sales": sa}
+                "threshold": int(get_setting(db, "stock_threshold", "60")),
+                "stale_days": int(get_setting(db, "stale_days", "2")), "stock": st, "sales": sa}
 
-    def load_tabs(path, names):
-        """Parsed tabs, re-read only when the file changes (a 5 MB workbook takes seconds)."""
-        key = (str(path), path.stat().st_mtime_ns, tuple(names))
+    def cached(key, make):
+        """Parsed tabs, worked out again only when the data changes (a big sheet takes seconds)."""
         with cache_lock:
             if key not in cache:
                 cache.clear()
-                cache[key] = stock.read_tabs(path, names)
+                cache[key] = make()
             return cache[key]
 
+    def sheet_tabs(snap, names):
+        def make():
+            return [stock.parse_rows(snap["rows"][n], n) if n in snap["rows"] else
+                    stock.Tab(n, problem="not read yet, press Refresh" if n in dict(snap["tabs_all"])
+                              else "tab not in the sheet") for n in names]
+        return cached(("sheet", snap["sheet_id"], snap["fetched_ms"], tuple(names)), make)
+
     def stock_report(db, request=None):
-        """Everything the Stock risk page and the Today card show; None if not set up yet."""
+        """Everything the Stock risk page and the Today card show."""
         cfg = stock_settings(db, request)
-        path = stock_file(db)
-        if not path.exists():
-            return {"cfg": cfg, "path": path, "error": "", "ready": False}
-        try:
-            mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y %H:%M")
-            tabs = load_tabs(path, cfg["tabs"]) if cfg["tabs"] else []
-        except Exception as e:   # a broken or half-synced file shouldn't take the page down
-            return {"cfg": cfg, "path": path, "error": f"Could not read the file: {e}", "ready": False}
-        rows, counts = stock.risk_rows(tabs, cfg["stock"], cfg["sales"], cfg["threshold"])
-        return {"cfg": cfg, "path": path, "error": "", "ready": bool(cfg["tabs"]), "mtime": mtime,
-                "tabs": tabs, "rows": rows, "counts": counts,
-                "flagged": counts["out"] + counts["critical"] + counts["low"]}
+        rep = {"cfg": cfg, "ready": False, "error": "", "warnings": [], "all_tabs": [], "tabs": []}
+        sid = get_setting(db, "sheet_id")
+        if sid:
+            snap = sync.snapshot(sid)
+            rep["source"] = {"kind": "sheet", "url": gsheet.sheet_url(sid), "title": (snap or {}).get("title", ""),
+                             "fetched_ms": (snap or {}).get("fetched_ms"),
+                             "modified_ms": (snap or {}).get("modified_ms"),
+                             "modified_by": (snap or {}).get("modified_by", "")}
+            rep["error"] = get_setting(db, "sheet_error")
+            if snap:
+                rep["all_tabs"] = snap["tabs_all"]
+                rep["tabs"] = sheet_tabs(snap, cfg["tabs"]) if cfg["tabs"] else []
+                now = now_ms()
+                if snap.get("modified_ms") and now - snap["modified_ms"] > cfg["stale_days"] * 86_400_000:
+                    rep["warnings"].append(f"Nobody has edited the sheet for {(now - snap['modified_ms']) // 86_400_000} "
+                                           "days, so sales and stock figures may be out of date.")
+                if now - snap["fetched_ms"] > 2 * 3600_000:
+                    rep["warnings"].append("These figures were read more than 2 hours ago; the app can't refresh "
+                                           "them right now (see the message above).")
+        else:
+            path = stock_file(db)
+            rep["source"] = {"kind": "file", "path": path, "exists": path.exists()}
+            if path.exists():
+                try:
+                    mtime = path.stat().st_mtime_ns
+                    rep["source"]["modified_ms"] = mtime // 1_000_000
+                    rep["all_tabs"] = cached(("names", str(path), mtime), lambda: stock.tab_names(path))
+                    if cfg["tabs"]:
+                        rep["tabs"] = cached(("file", str(path), mtime, tuple(cfg["tabs"])),
+                                             lambda: stock.read_tabs(path, cfg["tabs"]))
+                except Exception as e:   # a broken or half-synced file shouldn't take the page down
+                    rep["error"] = f"Could not read the file: {e}"
+        rows, counts = stock.risk_rows(rep["tabs"], cfg["stock"], cfg["sales"], cfg["threshold"])
+        rep.update(rows=rows, counts=counts, ready=bool(rep["tabs"]),
+                   flagged=counts["out"] + counts["critical"] + counts["low"])
+        return rep
 
     @app.get("/risk", response_class=HTMLResponse)
     def risk(request: Request, tab: str = "", show: str = "flagged", user=Depends(current), db=Depends(get_db)):
         rep = stock_report(db, request)
-        all_tabs = []
-        if rep["path"].exists() and not rep["error"]:
-            try:
-                all_tabs = stock.tab_names(rep["path"])
-            except Exception as e:
-                rep["error"] = f"Could not read the file: {e}"
-        rows = rep.get("rows", [])
+        rows = rep["rows"]
         if tab:
             rows = [r for r in rows if r["item"].tab == tab]
         if show == "flagged":
             rows = [r for r in rows if r["level"] in ("out", "critical", "low")]
-        return page(request, "risk.html", section="risk", rep=rep, rows=rows, tab=tab, show=show,
-                    all_tabs=all_tabs, can_set=can(user, "approver"), from_pc=bool(get_setting(db, "stock_path")),
+        can_set = can(user, "approver")
+        return page(request, "risk.html", section="risk", rep=rep, rows=rows, tab=tab, show=show, can_set=can_set,
+                    sheet_link=get_setting(db, "sheet_url"), from_pc=bool(get_setting(db, "stock_path")),
+                    robot=gsheet.robot_email(sync.key_path) if can_set else "",
                     stock_measures=stock.STOCK_MEASURES, sales_measures=stock.SALES_MEASURES)
+
+    @app.post("/risk/refresh")
+    def risk_refresh(request: Request, csrf: str = Form(""), user=Depends(current), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        last = int(get_setting(db, "sheet_attempt_ms", "0") or 0)
+        if get_setting(db, "sheet_id") and now_ms() - last > 20_000:   # one read at a time, not every click
+            sync.refresh()
+        return RedirectResponse("/risk", status_code=303)
+
+    @app.post("/risk/sheet")
+    def risk_sheet(request: Request, link: str = Form(""), csrf: str = Form(""),
+                   user=Depends(needs("approver")), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        link = link.strip()
+        if not link:
+            set_setting(db, "sheet_id", "")
+            set_setting(db, "sheet_url", "")
+            audit(db, user["name"], "stock sheet", "removed")
+            return RedirectResponse("/risk", status_code=303)
+        try:
+            sid = gsheet.sheet_id_from(link)
+        except gsheet.SheetError as e:
+            return page(request, "message.html", 400, title="That link can't be used", text=str(e))
+        set_setting(db, "sheet_id", sid)
+        set_setting(db, "sheet_url", gsheet.sheet_url(sid))
+        audit(db, user["name"], "stock sheet", gsheet.sheet_url(sid))
+        sync.refresh()
+        return RedirectResponse("/risk", status_code=303)
 
     @app.post("/risk/upload")
     async def risk_upload(request: Request, file: UploadFile = File(...), csrf: str = Form(""),
@@ -298,17 +383,23 @@ def create_app(db_path=None):
         form = await request.form()
         check_csrf(request, form.get("csrf"))
         tabs = [t for t in form.getlist("tabs") if isinstance(t, str)]
-        try:
-            threshold = max(1, min(365, int(form.get("threshold") or 60)))
-        except ValueError:
-            threshold = 60
+
+        def number(name, default, low, high):
+            try:
+                return max(low, min(high, int(form.get(name) or default)))
+            except ValueError:
+                return default
+        threshold = number("threshold", 60, 1, 365)
         set_setting(db, "stock_tabs", json.dumps(tabs))
         set_setting(db, "stock_threshold", threshold)
+        set_setting(db, "stale_days", number("stale_days", 2, 1, 60))
         if form.get("stock") in stock.STOCK_MEASURES:
             set_setting(db, "stock_measure", form.get("stock"))
         if form.get("sales") in stock.SALES_MEASURES:
             set_setting(db, "sales_measure", form.get("sales"))
         audit(db, user["name"], "stock settings", f"{threshold} days; tabs: {', '.join(tabs)}")
+        if get_setting(db, "sheet_id"):
+            await run_in_threadpool(sync.refresh)   # read the newly ticked tabs now
         return RedirectResponse("/risk", status_code=303)
 
     # sections that later milestones fill in; each page says what will appear there

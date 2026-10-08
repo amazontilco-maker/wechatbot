@@ -3,3 +3,5 @@ uvicorn
 jinja2
 python-multipart
 openpyxl
+google-auth
+requests

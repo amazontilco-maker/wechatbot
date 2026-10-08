@@ -11,7 +11,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 input, textarea, select, button { font: inherit; }
 input, textarea, select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; width: 100%; color: var(--ink); }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
-button { padding: 7px 14px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+button { white-space: nowrap; padding: 7px 14px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
 button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
 button.link { background: none; color: var(--muted); padding: 0; font-size: 12px; }
 .muted { color: var(--muted); }
@@ -157,14 +157,28 @@ table.risk tr.lv-low td:first-child { box-shadow: inset 3px 0 #e8b400; }
 .settings { margin-top: 16px; }
 .settings summary { cursor: pointer; }
 .settings summary h2 { display: inline; }
-.settings form { display: grid; gap: 10px; margin-top: 10px; }
-.settings form button { justify-self: start; }
 .tabpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; }
 .tabpick label { display: flex; gap: 6px; align-items: center; }
 .tabpick input { width: auto; }
 .tabpick .off { color: #b0b4ba; }
-.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .upload { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .upload input { width: auto; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
-@media (max-width: 760px) { .row3 { grid-template-columns: 1fr; } }
+
+.source { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+.source span + span::before { content: "·"; margin-right: 14px; color: #c0c4ca; }
+.banner { border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; font-size: 13px; }
+.banner.bad { background: #fde2e1; color: #912018; }
+.banner.warn { background: #fff6cc; color: #6b4c00; }
+.warntext { color: #b54708; font-weight: 600; }
+.settings h3 { font-size: 14px; margin: 16px 0 8px; }
+.linkform { display: flex; gap: 8px; }
+.setform { display: grid; gap: 10px; }
+.setform button { justify-self: start; }
+.row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.copy { user-select: all; color: var(--ink); }
+code { background: #eff0f1; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+details.sub { margin-top: 16px; }
+details.sub summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) { .row4 { grid-template-columns: 1fr; } .linkform { flex-direction: column; } }
