@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Today{% endblock %}
+{% block body %}
+<h1>Good day, {{ me.name }}</h1>
+<p class="muted">What needs attention across suppliers, forwarders and stock.</p>
+<div class="kpis">
+  <a class="kpi" href="/messages?new=1"><b>{{ new_total }}</b><span>new messages</span><small>in {{ chats_waiting }} chat{{ '' if chats_waiting == 1 else 's' }}</small></a>
+  <a class="kpi" href="/approvals"><b>–</b><span>replies to approve</span><small>step 2</small></a>
+  <a class="kpi" href="/updates"><b>–</b><span>ETA updates to review</span><small>M3</small></a>
+  <a class="kpi" href="/risk"><b>–</b><span>SKUs at stockout risk</span><small>M6</small></a>
+</div>
+<div class="cols">
+  <section class="panel">
+    <h2>New messages</h2>
+    {% if not waiting %}<p class="muted">All caught up.</p>{% endif %}
+    <ul class="list">
+    {% for c in waiting %}
+      <li><a href="/chat?id={{ c.id | q }}">
+        <span class="name">{{ c.name }} <span class="pill {{ c.category }}">{{ c.category }}</span></span>
+        <span class="badge">{{ c.new }}</span>
+        <span class="preview">{{ (c.preview or '')[:120] }}</span>
+      </a></li>
+    {% endfor %}
+    </ul>
+  </section>
+  <section class="panel">
+    <h2>Contacts</h2>
+    <ul class="list compact">
+      {% for k, n in counts.items() %}<li><a href="/messages?cat={{ k }}"><span class="name"><span class="pill {{ k }}">{{ k }}</span></span><span class="muted">{{ n }} chat{{ '' if n == 1 else 's' }}</span></a></li>{% endfor %}
+    </ul>
+    <p class="hint">Mark each chat as supplier or forwarder from its header. Forwarder chats are the ones the ETA matching (M3) will read.</p>
+  </section>
+</div>
+{% endblock %}

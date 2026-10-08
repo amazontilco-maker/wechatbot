@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block body %}
+<div class="bar"><h1>{{ title }}</h1><span class="pill soon">coming in {{ when }}</span></div>
+<p class="muted">{{ text }}</p>
+<table class="grid">
+  <tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>
+  <tr><td colspan="{{ cols | length }}" class="muted center">Nothing here yet.</td></tr>
+</table>
+{% endblock %}

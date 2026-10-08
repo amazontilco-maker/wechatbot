@@ -75,14 +75,15 @@ class AppTest(unittest.TestCase):
 
     def test_inbox_thread_and_unread(self):
         self.assertEqual(self.login().status_code, 303)
-        r = self.client.get("/")
+        r = self.client.get("/messages")
         self.assertIn("SZ Ocean", r.text)
         self.assertIn('class="badge">2<', r.text)
+        self.assertIn("<b>2</b><span>new messages", self.client.get("/").text)
         r = self.client.get("/chat", params={"id": "ui:SZ Ocean"})
         self.assertIn("Kevin", r.text)
         self.assertIn("&lt;script&gt;", r.text)        # message text is escaped
         self.assertNotIn("<script>alert", r.text)
-        self.assertNotIn('class="badge"', self.client.get("/").text)   # read now
+        self.assertNotIn('class="badge"', self.client.get("/messages").text)   # read now
 
     def test_notes_need_csrf_and_role(self):
         self.login()
@@ -97,6 +98,16 @@ class AppTest(unittest.TestCase):
         page = viewer.get("/chat", params={"id": "ui:SZ Ocean"}).text
         self.assertNotIn("Save notes", page)
         self.assertEqual(viewer.get("/audit").status_code, 403)
+
+    def test_category_and_sections(self):
+        self.login()
+        page = self.client.get("/chat", params={"id": "ui:SZ Ocean"}).text
+        self.client.post("/chat/category", data={"id": "ui:SZ Ocean", "category": "forwarder",
+                                                 "csrf": self.csrf(page)})
+        self.assertIn("SZ Ocean", self.client.get("/messages", params={"cat": "forwarder"}).text)
+        self.assertNotIn("SZ Ocean", self.client.get("/messages", params={"cat": "supplier"}).text)
+        for path in ("/shipments", "/updates", "/risk", "/approvals", "/chasers", "/health"):
+            self.assertEqual(self.client.get(path).status_code, 200, path)
 
     def test_search_and_logout(self):
         self.login()

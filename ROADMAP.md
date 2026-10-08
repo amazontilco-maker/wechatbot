@@ -14,7 +14,11 @@ Merge to `main` when a milestone is done and tested on the real phone.
   Windows PC, driven over ADB with screenshots + local OCR. WeChat blocks web login and Android
   accessibility dumps for this account, so this is the only reading method that works. No Windows VM.
 - **A person approves every outgoing message.** No bulk or unattended sending (account-ban risk).
-  Claude only reads, matches and drafts.
+  Claude only reads, matches and drafts. A sender's reply waits for an approver; an approver or
+  admin who writes a reply sends it with one click (logged as requested + approved by them).
+- **The app is an operations workspace, not a WeChat copy**: sidebar Today / Shipments / ETA updates /
+  Stock risk / Messages / Approvals / ETA chasers / Search / Health / Log. Each chat is labelled
+  supplier / forwarder / internal / other; forwarder chats feed M3.
 - **Live web app, accessible from anywhere** with a specific link and a login. It runs on the office
   PC (next to the phone) and is published through an HTTPS tunnel (Cloudflare Tunnel; no open
   ports, works behind office routers). Optionally Cloudflare Access in front (email one-time code).
@@ -45,7 +49,7 @@ Merge to `main` when a milestone is done and tested on the real phone.
   phone queue sends → status Sent / Failed shown on the message.
 - Background scanner on a schedule (e.g. every 15 min) through the same phone queue.
 - Health page: phone connected, WeChat logged in, last scan, queue length.
-- Build steps: 1 logins + inbox + thread + search + notes (`py -m web`) — done;
+- Build steps: 1 logins + workspace (Today, Messages two-pane, chat labels, search, notes) — done;
   2 reply box + @tag + request / approve & send through the phone queue; 3 scheduled scans + health;
   4 Cloudflare Tunnel + admin page for logins.
 

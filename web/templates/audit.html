@@ -2,7 +2,7 @@
 {% block title %}Log{% endblock %}
 {% block body %}
 <h1>Activity log</h1>
-<table class="log">
+<table class="grid">
 <tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr>
 {% for r in rows %}
 <tr><td>{{ r.ts | ts }}</td><td>{{ r.user }}</td><td>{{ r.action }}</td><td>{{ r.detail }}</td></tr>

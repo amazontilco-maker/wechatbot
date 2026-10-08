@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth
-from .db import audit, can, connect
+from .db import CATEGORIES, audit, can, connect
 
 HERE = Path(__file__).resolve().parent
 COOKIE = "wb_session"
@@ -143,11 +143,10 @@ def create_app(db_path=None):
         resp.delete_cookie(COOKIE, path="/")
         return resp
 
-    # ---------- chats ----------
-    @app.get("/", response_class=HTMLResponse)
-    def inbox(request: Request, new: int = 0, user=Depends(current), db=Depends(get_db)):
+    # ---------- workspace ----------
+    def chat_list(db, user, category=""):
         rows = db.execute("""
-            SELECT c.id, c.name, c.kind, c.notes, s.seen,
+            SELECT c.id, c.name, c.kind, c.notes, c.category, s.seen,
               (SELECT MAX(ts) FROM messages m WHERE m.conv_id = c.id) AS last_ts,
               (SELECT COUNT(*) FROM messages m WHERE m.conv_id = c.id AND m.direction = 'in'
                  AND m.ts > s.seen) AS new,
@@ -157,12 +156,27 @@ def create_app(db_path=None):
             JOIN (SELECT c2.id AS cid, COALESCE(r.last_read_ts, c2.last_read_ts) AS seen FROM convs c2
                   LEFT JOIN user_reads r ON r.conv_id = c2.id AND r.user_id = ?) s ON s.cid = c.id
             ORDER BY last_ts IS NULL, last_ts DESC""", (user["id"],)).fetchall()
-        if new:
-            rows = [r for r in rows if r["new"]]
-        return page(request, "inbox.html", chats=rows, only_new=bool(new))
+        return [r for r in rows if not category or r["category"] == category]
+
+    @app.get("/", response_class=HTMLResponse)
+    def today(request: Request, user=Depends(current), db=Depends(get_db)):
+        chats = chat_list(db, user)
+        waiting = [c for c in chats if c["new"]]
+        counts = {k: sum(1 for c in chats if c["category"] == k) for k in CATEGORIES}
+        return page(request, "today.html", section="today", waiting=waiting[:8],
+                    new_total=sum(c["new"] for c in chats), chats_waiting=len(waiting), counts=counts)
+
+    @app.get("/messages", response_class=HTMLResponse)
+    def messages(request: Request, new: int = 0, cat: str = "", user=Depends(current), db=Depends(get_db)):
+        cat = cat if cat in CATEGORIES else ""
+        chats = [c for c in chat_list(db, user, cat) if c["new"] or not new]
+        return page(request, "messages.html", section="messages", chats=chats, only_new=bool(new),
+                    cat=cat, categories=CATEGORIES, conv=None)
 
     @app.get("/chat", response_class=HTMLResponse)
-    def thread(request: Request, id: str, before: int = 0, user=Depends(current), db=Depends(get_db)):
+    def thread(request: Request, id: str, before: int = 0, cat: str = "", user=Depends(current),
+               db=Depends(get_db)):
+        cat = cat if cat in CATEGORIES else ""
         conv = db.execute("SELECT * FROM convs WHERE id = ?", (id,)).fetchone()
         if not conv:
             return page(request, "message.html", 404, title="Not found", text="That chat doesn't exist.")
@@ -179,8 +193,48 @@ def create_app(db_path=None):
                        "ON CONFLICT(user_id, conv_id) DO UPDATE SET last_read_ts = "
                        "MAX(last_read_ts, excluded.last_read_ts)", (user["id"], id, msgs[-1]["ts"]))
             db.commit()
-        return page(request, "thread.html", conv=conv, msgs=msgs, seen=seen,
-                    older=msgs[0]["ts"] if older else 0, can_edit=can(user, "sender"))
+        return page(request, "messages.html", section="messages", conv=conv, msgs=msgs, seen=seen,
+                    older=msgs[0]["ts"] if older else 0, can_edit=can(user, "sender"),
+                    chats=chat_list(db, user, cat), only_new=False, cat=cat, categories=CATEGORIES)
+
+    @app.post("/chat/category")
+    def save_category(request: Request, id: str = Form(...), category: str = Form(...), csrf: str = Form(""),
+                      user=Depends(needs("sender")), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        if category in CATEGORIES and db.execute(
+                "UPDATE convs SET category = ? WHERE id = ?", (category, id)).rowcount:
+            db.commit()
+            audit(db, user["name"], "chat type", f"{id}: {category}")
+        return RedirectResponse(f"/chat?id={quote(id, safe='')}", status_code=303)
+
+    # sections that later milestones fill in; each page says what will appear there
+    SOON = {
+        "shipments": ("Shipments", "M2", "Every inbound shipment from the stock sheet, per market: SKU, route "
+                      "(Air / Fast ocean / Ocean to FBA, AWD or 3PL), units, forwarder, ETA and when it was "
+                      "last confirmed.", ["Market", "SKU", "Route", "Units", "Forwarder", "ETA", "Last confirmed"]),
+        "updates": ("ETA updates", "M3", "New ETAs and delays that Claude finds in forwarder chats, matched to "
+                    "shipments: old ETA, new ETA and the message it came from. Approve, edit or reject; approved "
+                    "ones are written to the stock sheet with a note (M4).",
+                    ["Shipment", "Old ETA", "New ETA", "Source message", "Status"]),
+        "chasers": ("ETA chasers", "M5", "Shipments nobody has confirmed for a few days, grouped by forwarder, "
+                    "with a drafted message asking for an update. Approve & send goes through the phone.",
+                    ["Forwarder", "Shipments", "Last confirmed", "Draft"]),
+        "risk": ("Stock risk", "M6", "SKUs that run out before their next shipment arrives, with options "
+                 "(air, AWD/3PL transfer, slower sales).", ["Market", "SKU", "Runs out", "Next ETA", "Gap"]),
+        "approvals": ("Approvals", "step 2", "Replies waiting to be approved, with Approve & send and Reject.",
+                      ["Chat", "Message", "Asked by", "When"]),
+        "health": ("Health", "step 3", "Phone connected, WeChat logged in, last scan, next scan, phone queue.",
+                   ["Check", "Status"]),
+    }
+
+    def soon_page(key):
+        def view(request: Request, user=Depends(current)):
+            title, when, text, cols = SOON[key]
+            return page(request, "soon.html", section=key, title=title, when=when, text=text, cols=cols)
+        app.get(f"/{key}", response_class=HTMLResponse)(view)
+
+    for key in SOON:
+        soon_page(key)
 
     @app.post("/chat/notes")
     def save_notes(request: Request, id: str = Form(...), notes: str = Form(""), csrf: str = Form(""),
@@ -201,11 +255,11 @@ def create_app(db_path=None):
                 "SELECT m.*, c.name AS conv FROM messages m JOIN convs c ON c.id = m.conv_id "
                 "WHERE m.text LIKE ? ESCAPE '\\' OR m.sender LIKE ? ESCAPE '\\' ORDER BY m.ts DESC LIMIT 100",
                 (like, like)).fetchall()
-        return page(request, "search.html", q=q, results=rows)
+        return page(request, "search.html", section="search", q=q, results=rows)
 
     @app.get("/audit", response_class=HTMLResponse)
     def audit_log(request: Request, user=Depends(needs("approver")), db=Depends(get_db)):
         rows = db.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 300").fetchall()
-        return page(request, "audit.html", rows=rows)
+        return page(request, "audit.html", section="log", rows=rows)
 
     return app

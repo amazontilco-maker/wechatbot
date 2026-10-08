@@ -6,6 +6,7 @@ import time
 from scanner.store import open_db
 
 ROLES = ("viewer", "sender", "approver", "admin")   # each role can do everything the ones before it can
+CATEGORIES = ("supplier", "forwarder", "internal", "other")   # what kind of contact a chat is
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -34,6 +35,8 @@ def connect(path=None):
     if str(path) != ":memory:":
         db.execute("PRAGMA journal_mode = WAL")
     db.executescript(SCHEMA)
+    if "category" not in {r[1] for r in db.execute("PRAGMA table_info(convs)")}:
+        db.execute("ALTER TABLE convs ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
     return db
 
 

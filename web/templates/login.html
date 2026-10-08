@@ -2,7 +2,8 @@
 {% block title %}Log in{% endblock %}
 {% block body %}
 <form method="post" action="/login" class="card login">
-  <h1>Supplier WeChat</h1>
+  <div class="logo"><span class="mark">T</span><span>Tilco Ops</span></div>
+  <p class="muted">Inventory, shipments and supplier chats</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <label>Name <input name="name" autocomplete="username" required autofocus></label>
   <label>Password <input name="password" type="password" autocomplete="current-password" required></label>

@@ -1,26 +1,57 @@
+{%- set icons = {
+  'today': 'M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10',
+  'shipments': 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 100-4 2 2 0 000 4zM17 19a2 2 0 100-4 2 2 0 000 4z',
+  'updates': 'M4 12a8 8 0 0114-5l2-2v6h-6l2-2a5 5 0 10.5 6',
+  'risk': 'M12 3l10 18H2zM12 10v5M12 18v.5',
+  'messages': 'M4 5h16v11H9l-5 4z',
+  'approvals': 'M5 12l4 4 10-10',
+  'chasers': 'M6 8a6 6 0 0112 0v5l2 3H4l2-3zM10 20h4',
+  'health': 'M3 12h4l2-5 4 10 2-5h6',
+  'search': 'M11 18a7 7 0 100-14 7 7 0 000 14zM16 16l5 5',
+  'log': 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+} -%}
+{%- macro icon(k) -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icons[k] }}"/></svg>{%- endmacro -%}
+{%- macro nav(k, label, href) -%}
+<a href="{{ href }}" class="{{ 'on' if section == k }}">{{ icon(k) }}<span>{{ label }}</span></a>
+{%- endmacro -%}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}WeChat inbox{% endblock %} · Tilco</title>
+<title>{% block title %}Tilco Ops{% endblock %} · Tilco Ops</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="{{ 'app' if me else 'bare' }}">
 {% if me %}
-<header>
-  <a class="brand" href="/">Inbox</a>
-  <a href="/search">Search</a>
-  {% if me.role in ('approver', 'admin') %}<a href="/audit">Log</a>{% endif %}
-  <span class="spacer"></span>
-  <span class="who">{{ me.name }} · {{ me.role }}</span>
-  <form method="post" action="/logout" class="inline">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="link">Log out</button>
-  </form>
-</header>
+<aside class="side">
+  <div class="logo"><span class="mark">T</span><span>Tilco Ops</span></div>
+  <nav>
+    <div class="group">Plan</div>
+    {{ nav('today', 'Today', '/') }}
+    {{ nav('shipments', 'Shipments', '/shipments') }}
+    {{ nav('updates', 'ETA updates', '/updates') }}
+    {{ nav('risk', 'Stock risk', '/risk') }}
+    <div class="group">Talk</div>
+    {{ nav('messages', 'Messages', '/messages') }}
+    {{ nav('approvals', 'Approvals', '/approvals') }}
+    {{ nav('chasers', 'ETA chasers', '/chasers') }}
+    <div class="group">System</div>
+    {{ nav('search', 'Search', '/search') }}
+    {{ nav('health', 'Health', '/health') }}
+    {% if me.role in ('approver', 'admin') %}{{ nav('log', 'Activity log', '/audit') }}{% endif %}
+  </nav>
+  <div class="me">
+    <span class="avatar">{{ me.name[:1] | upper }}</span>
+    <span class="who">{{ me.name }}<small>{{ me.role }}</small></span>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="link">Log out</button>
+    </form>
+  </div>
+</aside>
 {% endif %}
-<main>
+<main class="{% block mainclass %}{% endblock %}">
 {% block body %}{% endblock %}
 </main>
 </body>
