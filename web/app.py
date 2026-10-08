@@ -338,6 +338,25 @@ def create_app(db_path=None, background=True, sheets_client=None):
             sync.refresh()
         return RedirectResponse("/risk", status_code=303)
 
+    @app.post("/risk/reset")
+    def risk_reset(request: Request, confirm: str = Form(""), csrf: str = Form(""),
+                   user=Depends(needs("approver")), db=Depends(get_db)):
+        """Forget the stock sheet: unlink it and delete every stock figure the app saved
+        (the sheet copy, an uploaded file, the ticked tabs). The rules (60 days etc.) stay."""
+        check_csrf(request, csrf)
+        if confirm != "yes":
+            return page(request, "message.html", 400, title="Nothing was reset",
+                        text="Tick the box to confirm, then press Reset.")
+        with sync.lock:   # wait for any read in progress, so it can't write the old data back
+            for key in ("sheet_id", "sheet_url", "sheet_error", "sheet_attempt_ms", "stock_tabs", "stock_path"):
+                set_setting(db, key, "[]" if key == "stock_tabs" else "")
+            for name in (gsheet.SNAPSHOT_NAME, "stock.xlsx", "stock.upload.xlsx"):
+                (data_dir / name).unlink(missing_ok=True)
+        with cache_lock:
+            cache.clear()
+        audit(db, user["name"], "stock reset", "sheet unlinked, stock data deleted")
+        return RedirectResponse("/risk", status_code=303)
+
     @app.post("/risk/sheet")
     def risk_sheet(request: Request, link: str = Form(""), csrf: str = Form(""),
                    user=Depends(needs("approver")), db=Depends(get_db)):

@@ -136,6 +136,25 @@ class SheetAppTest(unittest.TestCase):
         self.assertIn("PMEC-001", r.text)                               # last good copy still shown
         self.assertIn("Share it with", get_setting(db, "sheet_error"))
 
+    def test_reset_removes_link_and_data(self):
+        self.client.post("/risk/sheet", data={"csrf": self.csrf(), "link": SID})
+        self.client.post("/risk/settings", data={"csrf": self.csrf(), "tabs": ["UK"], "threshold": "45"})
+        snapshot = os.path.join(self.dir, gsheet.SNAPSHOT_NAME)
+        self.assertTrue(os.path.exists(snapshot))
+        r = self.client.post("/risk/reset", data={"csrf": self.csrf()})            # box not ticked
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.exists(snapshot))
+        r = self.client.post("/risk/reset", data={"csrf": self.csrf(), "confirm": "yes"})
+        self.assertFalse(os.path.exists(snapshot))
+        self.assertIn("No stock sheet linked yet", r.text)
+        self.assertNotIn("PMEC-001", r.text)
+        self.assertNotIn("Stock count LIVE", r.text)
+        db = connect(self.path)
+        self.assertEqual(get_setting(db, "sheet_id"), "")
+        self.assertEqual(get_setting(db, "stock_tabs"), "[]")
+        self.assertEqual(get_setting(db, "stock_threshold"), "45")              # rules are kept
+        self.assertIn("stock reset", [r[0] for r in db.execute("SELECT action FROM audit")])
+
     def test_excel_link_refused(self):
         r = self.client.post("/risk/sheet", data={"csrf": self.csrf(), "link":
                              "https://docs.google.com/spreadsheets/d/1fGDIkxG_QDuQtZUKssmz399nWGntz56O/edit?rtpof=true"})

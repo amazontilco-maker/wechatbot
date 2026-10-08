@@ -140,19 +140,27 @@ table.grid th, table.grid td { text-align: left; padding: 8px 10px; border-botto
 /* stock risk */
 .small { font-size: 12px; }
 .kpi.bad b { color: #d83931; }
-.kpi.warn b { color: #de7802; }
-.kpi.amber b { color: #b8860b; }
+.kpi.bad { background: #fde4e2; border-color: #f5c2bf; }
+.kpi.warn b { color: #c26a00; }
+.kpi.warn { background: #ffe8cc; border-color: #ffd29e; }
+.kpi.amber b { color: #8a6d00; }
+.kpi.amber { background: #fff7c2; border-color: #f3e08a; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .toolbar select { width: auto; }
 .tablewrap { overflow-x: auto; border-radius: 10px; }
 table.risk td.num, table.risk th.num { text-align: right; white-space: nowrap; }
-table.risk td.sel { font-weight: 700; background: #f5f8ff; }
-table.risk tr.lv-out td:first-child { box-shadow: inset 3px 0 #d83931; }
-table.risk tr.lv-critical td:first-child { box-shadow: inset 3px 0 #de7802; }
-table.risk tr.lv-low td:first-child { box-shadow: inset 3px 0 #e8b400; }
-.pill.lv-out { background: #fde2e1; color: #b42318; }
-.pill.lv-critical { background: #ffead1; color: #b54708; }
-.pill.lv-low { background: #fff6cc; color: #8a6100; }
+table.risk td.sel { font-weight: 700; }
+table.risk tr.lv-ok td.sel, table.risk tr.lv-nosales td.sel { background: #f5f8ff; }
+/* whole row in the status colour, like the sheet's own row colours */
+table.risk tr.lv-out td { background: #fde4e2; }
+table.risk tr.lv-critical td { background: #ffe8cc; }
+table.risk tr.lv-low td { background: #fff7c2; }
+table.risk tr.lv-out td:first-child { box-shadow: inset 4px 0 #d83931; }
+table.risk tr.lv-critical td:first-child { box-shadow: inset 4px 0 #f08c00; }
+table.risk tr.lv-low td:first-child { box-shadow: inset 4px 0 #e8b400; }
+.pill.lv-out { background: #d83931; color: #fff; }
+.pill.lv-critical { background: #f08c00; color: #fff; }
+.pill.lv-low { background: #f5c400; color: #3d3000; }
 .pill.lv-ok { background: #e4f6ec; color: #18794e; }
 .settings { margin-top: 16px; }
 .settings summary { cursor: pointer; }
@@ -182,3 +190,8 @@ code { background: #eff0f1; padding: 1px 5px; border-radius: 4px; font-size: 12p
 details.sub { margin-top: 16px; }
 details.sub summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 @media (max-width: 760px) { .row4 { grid-template-columns: 1fr; } .linkform { flex-direction: column; } }
+button.danger { background: #d83931; }
+.resetform { display: grid; gap: 8px; }
+.resetform label { display: flex; gap: 6px; align-items: center; }
+.resetform input { width: auto; }
+.resetform button { justify-self: start; }
