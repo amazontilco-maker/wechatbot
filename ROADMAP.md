@@ -46,6 +46,20 @@ Merge to `main` when a milestone is done and tested on the real phone.
 - Background scanner on a schedule (e.g. every 15 min) through the same phone queue.
 - Health page: phone connected, WeChat logged in, last scan, queue length.
 
+**M1b — Pictures and files** (tracking numbers, B/L, packing lists, schedules)
+- Today a picture is only the OCR of its in-chat preview (`[image text]`, often partial) and files
+  are `[picture/file]`. Instead, during a scan: tap the picture to open it full screen, screenshot
+  it, OCR the full image, press Back. Keep the image file on the PC, linked to its message.
+- Local first (free): regex for container numbers (4 letters + 7 digits, ISO 6346 check digit),
+  FBA shipment IDs, B/L / AWB numbers, UPS/DHL/FedEx tracking, dates, amounts, quantities.
+- Only pictures that matter go to Claude vision (forwarder/supplier chats, or a number was found):
+  fixed JSON fields (doc type, tracking/container/BL, ETA/ETD, cartons, weight, CBM, amounts).
+- Files (xlsx/pdf/docx): tap to download in WeChat, then `adb pull` from the phone (WeChat's
+  download folder under /sdcard/Android/data/com.tencent.mm/... - test access on the A51; fallback:
+  WeChat "Save to phone" -> /sdcard/Download/WeChat) and parse the real file, no OCR.
+- Store extracted fields per message (with source picture/file); show them in the web app,
+  searchable; M3 uses them for shipment matching.
+
 **M2 — Shipments from the stock sheet**
 - Read the Google Sheet (service account, read-only first). Per market tab: SKU, ASIN, inbound
   columns (Transit to Amazon FC / AWD / 3PL × Air / Fast ocean / Ocean), ETA columns.
