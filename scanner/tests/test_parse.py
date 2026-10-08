@@ -269,3 +269,20 @@ class SendTests(unittest.TestCase):
         self.assertIn("not", text_problem("价格 ok"))
         self.assertTrue(text_problem("   "))
         self.assertEqual(shell_input_arg("it's $5"), "'it'\\''s%s$5'")
+
+    def test_real_typed_screen_ignores_chat_above(self):
+        # real OCR, Ilqa chat with "Test message" typed and the keyboard open
+        from scanner.parse import find_send_button, typed_text_matches
+        def L(x1, x2, y1, y2, t):
+            return Line(x1, y1, x2, y2, t)
+        shot = [L(345, 737, 1041, 1077, "Greetings shown above"),
+                L(199, 865, 1150, 1198, "Hey hello bye bye who are you??"),
+                L(74, 142, 1153, 1174, "TILCO"),
+                L(931, 1038, 1312, 1360, "Send"),
+                L(152, 440, 1315, 1362, "Test message"),
+                L(227, 308, 1447, 1491, "and"), L(517, 562, 1447, 1492, "is"),
+                L(785, 842, 1455, 1490, "on")]
+        b = find_send_button(shot)
+        self.assertEqual(b.y1, 1312)
+        self.assertTrue(typed_text_matches(shot, b, "Test message"))
+        self.assertFalse(typed_text_matches(shot, b, "Hey hello bye bye who are you??"))

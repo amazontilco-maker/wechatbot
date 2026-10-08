@@ -229,7 +229,8 @@ def cmd_send(args):
         dev.tap((button.x1 + button.x2) / 2, (button.y1 + button.y2) / 2)
         time.sleep(OPEN_WAIT)
         after = parse_chat(ocr(dev.screenshot()), w, h).messages
-        mine = [m for m in after if m.side == "out"]
+        # the keyboard is still open: only bubbles above the input bar are chat messages
+        mine = [m for m in after if m.side == "out" and m.y < button.y1 - 40 * s]
         if mine and similar_text(mine[-1].text, text):
             outcome.append("Sent.")
         else:

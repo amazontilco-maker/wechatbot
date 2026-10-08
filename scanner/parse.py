@@ -271,9 +271,17 @@ def typed_text_matches(lines, send, text, width=BASE_W):
     scrolls inside the box, so the visible part is compared with the end of `text`."""
     from difflib import SequenceMatcher
     s = _scale(width)
-    box = [l for l in lines if l.x2 <= send.x1 + 5 * s and l.x1 > 60 * s
-           and l.y2 > send.y1 - 280 * s and l.y1 < send.y2 + 40 * s]
-    seen = _plain("".join(l.text for l in sorted(box, key=lambda l: (l.y1, l.x1))))
+    left = [l for l in lines if l.x2 <= send.x1 + 5 * s and l.x1 > 100 * s]
+    row = [l for l in left if abs(l.y1 - send.y1) < 40 * s]   # the box's bottom line, beside Send
+    if not row:
+        return False
+    box = [min(row, key=lambda l: l.x1)]
+    # a longer text wraps upward inside the box: same left edge, lines ~60px apart.
+    # Chat bubbles above the input bar are further away, so they are not taken.
+    for l in sorted(left, key=lambda l: -l.y1):
+        if l.y1 < box[0].y1 and box[0].y1 - l.y1 <= 80 * s and abs(l.x1 - box[0].x1) <= 25 * s:
+            box.insert(0, l)
+    seen = _plain("".join(l.text for l in box))
     want = _plain(text)
     if not seen or not want:
         return False
