@@ -39,6 +39,7 @@ def make_workbook(path):
         ["Ice Pack", "TCIP-001", "B0X", 0.01, 0.01, 500, 0, 0, 0, 0, 500],
         ["Gloves", "GL-1", "B0Y", "#N/A", "-", 10],
         ["Chemo Cap", "CC-1", "B0Z", "12", "10", "0", None, None, None, None, "0", None, None],
+        ["Blank Stock", "BS-1", "B0W", 5, 4],
         [None, None, None, None, None, 20288],
         ["LEGENDS:"],
     ]
@@ -76,7 +77,7 @@ class StockTest(unittest.TestCase):
         self.assertEqual(uk.columns["onhand"], 10)    # K: first TOTAL UNITS, under ON HAND STOCK
         self.assertEqual(uk.columns["inbound"], 17)   # R: TOTAL UNITS under INBOUND
         self.assertEqual(uk.columns["total"], 20)     # U: Total units under ONHAND + INBOUND
-        self.assertEqual([i.sku for i in uk.items], ["PMPC-UK002", "PMEC-001", "TCIP-001", "GL-1", "CC-1"])
+        self.assertEqual([i.sku for i in uk.items], ["PMPC-UK002", "PMEC-001", "TCIP-001", "GL-1", "CC-1", "BS-1"])
         pm = uk.items[1]
         self.assertEqual((pm.sales7, pm.sales30, pm.amazon, pm.onhand, pm.inbound, pm.total),
                          (1.14, 0.97, 60, 60, 100, 160))
@@ -98,7 +99,8 @@ class StockTest(unittest.TestCase):
         self.assertEqual(by["W-1"]["days"], 15)
         self.assertEqual(by["W-1"]["level"], "critical")
         self.assertEqual(rows[0]["item"].sku, "CC-1")                       # most urgent first
-        self.assertEqual(counts, {"out": 1, "critical": 1, "low": 1, "ok": 1, "nosales": 2})
+        self.assertEqual(by["BS-1"]["level"], "nostock")                   # sells, stock cell empty
+        self.assertEqual(counts, {"out": 1, "critical": 1, "low": 1, "nostock": 1, "ok": 1, "nosales": 2})
         rows, _ = stock.risk_rows(tabs, "inbound", "30", 60)
         self.assertEqual({r["item"].sku: r["level"] for r in rows}["PMEC-001"], "ok")   # 160 / 0.97
 

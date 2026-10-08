@@ -36,7 +36,7 @@
     <a class="kpi bad" href="/risk?show=flagged"><b>{{ rep.counts.out }}</b><span>out of stock</span><small>under 1 day</small></a>
     <a class="kpi warn" href="/risk?show=flagged"><b>{{ rep.counts.critical }}</b><span>critical</span><small>under {{ [30, cfg.threshold] | min }} days</small></a>
     <a class="kpi amber" href="/risk?show=flagged"><b>{{ rep.counts.low }}</b><span>low</span><small>under {{ cfg.threshold }} days</small></a>
-    <a class="kpi" href="/risk?show=all"><b>{{ rep.counts.ok }}</b><span>OK</span><small>{{ rep.counts.nosales }} with no sales</small></a>
+    <a class="kpi" href="/risk?show=all"><b>{{ rep.counts.ok }}</b><span>OK</span><small>{{ rep.counts.nosales }} with no sales{% if rep.counts.nostock %} · {{ rep.counts.nostock }} with no stock figure{% endif %}</small></a>
   </div>
 
   <form method="get" action="/risk" class="toolbar">
@@ -65,13 +65,13 @@
       <td class="num {{ 'sel' if cfg.stock == 'onhand' }}">{{ d(x.days_onhand) }}</td>
       <td class="num">{{ n(it.inbound) }}</td>
       <td class="num {{ 'sel' if cfg.stock == 'inbound' }}">{{ d(x.days_total) }}</td>
-      <td><span class="pill lv-{{ x.level }}">{{ {'out': 'Out', 'critical': 'Critical', 'low': 'Low', 'ok': 'OK', 'nosales': 'No sales'}[x.level] }}</span></td>
+      <td><span class="pill lv-{{ x.level }}">{{ {'out': 'Out', 'critical': 'Critical', 'low': 'Low', 'nostock': 'No stock figure', 'ok': 'OK', 'nosales': 'No sales'}[x.level] }}</span></td>
     </tr>
     {% endfor %}
     {% if not rows %}<tr><td colspan="11" class="muted center">No SKUs {% if show == 'flagged' %}under {{ cfg.threshold }} days{% endif %}.</td></tr>{% endif %}
   </table>
   </div>
-  <p class="hint">Days = units ÷ average daily sales from the sheet. The highlighted Days column decides the status. "No sales" = no sales figure (or 0.01), so days can't be worked out.</p>
+  <p class="hint">Days = units ÷ average daily sales from the sheet. The highlighted Days column decides the status. "No sales" = no sales figure (or 0.01). "No stock figure" = it sells but the stock cell is empty, so check it in the sheet.</p>
   {% for t in rep.tabs if t.problem %}<p class="error">Tab "{{ t.name }}": {{ t.problem }}</p>{% endfor %}
   {% endif %}
 

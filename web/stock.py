@@ -220,6 +220,8 @@ def risk_rows(tabs, stock="onhand", sales="max", threshold=60):
             rate = it.sales(sales)
             if rate is None or rate <= NO_SALES:
                 level = "nosales"
+            elif d is None:
+                level = "nostock"     # selling, but the stock cell is empty or text: someone should look
             elif d < 1:
                 level = "out"
             elif d < min(30, threshold):
@@ -231,7 +233,7 @@ def risk_rows(tabs, stock="onhand", sales="max", threshold=60):
             rows.append({"item": it, "days": d, "rate": rate, "level": level,
                          "days_amazon": it.days("amazon", sales), "days_onhand": it.days("onhand", sales),
                          "days_total": it.days("inbound", sales)})
-    order = {"out": 0, "critical": 1, "low": 2, "ok": 3, "nosales": 4}
+    order = {"out": 0, "critical": 1, "low": 2, "nostock": 3, "ok": 4, "nosales": 5}
     rows.sort(key=lambda r: (order[r["level"]], r["days"] if r["days"] is not None else 1e9))
     counts = {k: sum(1 for r in rows if r["level"] == k) for k in order}
     return rows, counts

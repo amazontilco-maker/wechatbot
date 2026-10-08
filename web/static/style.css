@@ -195,3 +195,4 @@ button.danger { background: #d83931; }
 .resetform label { display: flex; gap: 6px; align-items: center; }
 .resetform input { width: auto; }
 .resetform button { justify-self: start; }
+.pill.lv-nostock { background: #e4e6eb; color: #1f2329; }

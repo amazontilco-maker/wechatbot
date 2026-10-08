@@ -311,7 +311,11 @@ def create_app(db_path=None, background=True, sheets_client=None):
                                              lambda: stock.read_tabs(path, cfg["tabs"]))
                 except Exception as e:   # a broken or half-synced file shouldn't take the page down
                     rep["error"] = f"Could not read the file: {e}"
-        rows, counts = stock.risk_rows(rep["tabs"], cfg["stock"], cfg["sales"], cfg["threshold"])
+        try:
+            rows, counts = stock.risk_rows(rep["tabs"], cfg["stock"], cfg["sales"], cfg["threshold"])
+        except Exception as e:   # odd values in the sheet must never take the pages down
+            rows, counts = [], {k: 0 for k in ("out", "critical", "low", "nostock", "ok", "nosales")}
+            rep["error"] = f"Could not work out days of stock: {e}"
         rep.update(rows=rows, counts=counts, ready=bool(rep["tabs"]),
                    flagged=counts["out"] + counts["critical"] + counts["low"])
         return rep
@@ -323,7 +327,7 @@ def create_app(db_path=None, background=True, sheets_client=None):
         if tab:
             rows = [r for r in rows if r["item"].tab == tab]
         if show == "flagged":
-            rows = [r for r in rows if r["level"] in ("out", "critical", "low")]
+            rows = [r for r in rows if r["level"] in ("out", "critical", "low", "nostock")]
         can_set = can(user, "approver")
         return page(request, "risk.html", section="risk", rep=rep, rows=rows, tab=tab, show=show, can_set=can_set,
                     sheet_link=get_setting(db, "sheet_url"), from_pc=bool(get_setting(db, "stock_path")),

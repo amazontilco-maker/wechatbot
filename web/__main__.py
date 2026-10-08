@@ -171,7 +171,7 @@ def cmd_sheetcheck(args):
         rows, counts = stock.risk_rows([tab])
         print(f"\n== {name}: {len(tab.items)} SKUs {('- ' + tab.problem) if tab.problem else ''}")
         print(f"   out {counts['out']}, critical {counts['critical']}, low {counts['low']}, "
-              f"ok {counts['ok']}, no sales {counts['nosales']}")
+              f"no stock figure {counts['nostock']}, ok {counts['ok']}, no sales {counts['nosales']}")
 
 
 def cmd_stockcheck(args):
@@ -184,7 +184,7 @@ def cmd_stockcheck(args):
         print("   " + ", ".join(f"{role}={letter(i)}" for role, i in tab.columns.items()))
         rows, counts = stock.risk_rows([tab], threshold=args.days)
         print(f"   out {counts['out']}, critical {counts['critical']}, low {counts['low']}, "
-              f"ok {counts['ok']}, no sales {counts['nosales']}")
+              f"no stock figure {counts['nostock']}, ok {counts['ok']}, no sales {counts['nosales']}")
         for r in rows[:5]:
             it = r["item"]
             if r["level"] in ("out", "critical", "low"):
