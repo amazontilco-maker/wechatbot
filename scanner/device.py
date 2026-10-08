@@ -17,6 +17,8 @@ def text_problem(text):
     bad = sorted({c for c in text if not (" " <= c <= "~")})
     if bad:
         return f"Only plain English letters, digits and punctuation can be typed for now; not: {' '.join(bad)}"
+    if "@" in text:
+        return "'@' opens WeChat's member picker in groups, so it can't be typed yet (tagging isn't built)."
     if "%s" in text:
         return "'%s' can't be typed (adb turns it into a space)."
     return ""
