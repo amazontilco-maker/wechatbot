@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ conv.name }}{% endblock %}
+{% block body %}
+<div class="bar">
+  <h1>{{ conv.name }}{% if conv.kind == 'room' %} <span class="tag">group</span>{% endif %}</h1>
+</div>
+<details class="notes">
+  <summary>Notes{% if conv.notes %}: {{ conv.notes[:80] }}{% if conv.notes|length > 80 %}…{% endif %}{% else %} (none){% endif %}</summary>
+  {% if can_edit %}
+  <form method="post" action="/chat/notes">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="id" value="{{ conv.id }}">
+    <textarea name="notes" rows="4" placeholder="What they supply, terms, contacts…">{{ conv.notes }}</textarea>
+    <button>Save notes</button>
+  </form>
+  {% else %}<p>{{ conv.notes or 'No notes.' }}</p>{% endif %}
+</details>
+<p class="hint">Text is read from phone screenshots, so a letter or digit can be wrong. Check prices and quantities on the phone before acting on them.</p>
+{% if older %}<p><a href="/chat?id={{ conv.id | q }}&before={{ older }}">Older messages</a></p>{% endif %}
+<div class="thread">
+{% set ns = namespace(marked=false) %}
+{% for m in msgs %}
+  {% if not ns.marked and m.ts > seen and m.direction == 'in' %}{% set ns.marked = true %}<div class="newline">New</div>{% endif %}
+  <div class="msg {{ m.direction }}{% if m.text.startswith('[image text]') or m.text == '[picture/file]' %} pic{% endif %}">
+    {% if m.direction == 'in' and conv.kind == 'room' %}<div class="sender">{{ m.sender }}</div>{% endif %}
+    <div class="text">{{ m.text }}</div>
+    <div class="meta" title="Scanned {{ m.ts | ts }}">{{ m.shown_time or (m.ts | ts) }}</div>
+  </div>
+{% endfor %}
+{% if not msgs %}<p class="muted">No messages stored for this chat.</p>{% endif %}
+</div>
+{% endblock %}

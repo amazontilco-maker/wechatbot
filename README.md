@@ -38,6 +38,16 @@ It opens the chat, shows the last messages and your text, and waits for you to t
 
 In a group, `--tag "John"` @mentions a member: it types `@`, picks the member from WeChat's list (scrolling it if needed), then types the text. If the name isn't in the list or matches several members, it undoes the `@` and sends nothing.
 
+## Team web app (M1, in progress)
+`py -m web serve` runs the team inbox on http://127.0.0.1:8000 (same `data/wechat.db`). Every person has their own login:
+```
+py -m pip install -r web/requirements.txt
+py -m web adduser YourName admin
+py -m web serve
+```
+Roles: viewer (reads), sender (+ notes, replies that need approval), approver (+ approve & send, activity log), admin (+ logins).
+Manage logins with `py -m web users|setrole|passwd|disable|enable`. Tests: `py -m unittest discover -s web/tests -t .`
+
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 
 ## Limits (known)

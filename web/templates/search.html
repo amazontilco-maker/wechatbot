@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block body %}
+<form method="get" action="/search" class="bar">
+  <input name="q" value="{{ q }}" placeholder="Search all chats" autofocus>
+  <button>Search</button>
+</form>
+{% if q and not results %}<p class="muted">No matches.</p>{% endif %}
+<ul class="results">
+{% for m in results %}
+  <li>
+    <a href="/chat?id={{ m.conv_id | q }}">{{ m.conv }}</a>
+    <span class="time">{{ m.shown_time or (m.ts | ts) }}</span><br>
+    <b>{{ 'Us' if m.direction == 'out' else m.sender }}:</b> {{ m.text }}
+  </li>
+{% endfor %}
+</ul>
+{% endblock %}

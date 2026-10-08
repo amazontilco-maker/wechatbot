@@ -45,6 +45,9 @@ Merge to `main` when a milestone is done and tested on the real phone.
   phone queue sends → status Sent / Failed shown on the message.
 - Background scanner on a schedule (e.g. every 15 min) through the same phone queue.
 - Health page: phone connected, WeChat logged in, last scan, queue length.
+- Build steps: 1 logins + inbox + thread + search + notes (`py -m web`) — done;
+  2 reply box + @tag + request / approve & send through the phone queue; 3 scheduled scans + health;
+  4 Cloudflare Tunnel + admin page for logins.
 
 **M2 — Shipments from the stock sheet**
 - Read the Google Sheet (service account, read-only first). Per market tab: SKU, ASIN, inbound
