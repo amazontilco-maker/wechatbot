@@ -144,41 +144,59 @@ def hlines(raw):
     return out
 
 
-# Synthetic group screen laid out like WeChat: grey member name (smaller font) above each bubble.
+# Real OCR (ocr-dump) of a supplier group on the Samsung A51.
 GROUP = hlines("""
-380-700,120-175  Cable Suppliers (5)
-481-602,250-300  9:02 AM
-172-330,330-368  Mr. Li
-202-760,385-435  Price is 1.20 USD per meter
-202-520,446-496  for 5000 meters
-172-300,570-608  Wang
-202-610,625-675  Can deliver by 20th
-640-881,780-830  Noted, thanks
-202-330,900-938  Chen
-202-700,955-1005  Sample sent yesterday
+79-271,43-80  21:00  0
+788-980,44-78  .l 100%
+45-139,130-177  <1
+179-870,131-180  John - Male Urin...anufacturer (12)
+177-395,544-574  Anthony Castro
+205-811,612-662  @John These 3 shipments for
+200-880,673-719  USA ZIM< will be pick up by Forest
+481-601,831-858  8:52 PM
+172-248,936-968  John
+198-258,1007-1056  ok
+176-395,1124-1157  Anthony Castro
+176-394,1507-1537  Anthony Castro
+202-822,1579-1622  These 2 ZIM shipments will be
+201-563,1636-1686  pick up by Yulong.
+196-470,1756-1789  Anthony Castro:
+172-249,1887-1919  John
+200-777,1959-2006  can you make a list I cannot
+200-481,2019-2061  remember all
 """)
 
 
 class GroupTests(unittest.TestCase):
-    def test_member_names(self):
+    def test_real_group_screen(self):
         s = parse_chat(GROUP)
-        got = [(m.side, m.sender, m.text) for m in s.messages]
+        self.assertEqual(s.title, "John - Male Urin...anufacturer (12)")
+        got = [(m.side, m.sender, m.text, m.time_label) for m in s.messages]
         self.assertEqual(got, [
-            ("in", "Mr. Li", "Price is 1.20 USD per meter\nfor 5000 meters"),
-            ("in", "Wang", "Can deliver by 20th"),
-            ("out", "", "Noted, thanks"),
-            ("in", "Chen", "Sample sent yesterday"),   # name at bubble x, found by its smaller font
+            ("in", "Anthony Castro", "@John These 3 shipments for\nUSA ZIM< will be pick up by Forest", ""),
+            ("in", "John", "ok", "8:52 PM"),
+            ("image", "Anthony Castro", "[picture/file]", "8:52 PM"),   # spreadsheet image, no readable text
+            ("in", "Anthony Castro", "These 2 ZIM shipments will be\npick up by Yulong.\n(quoting Anthony Castro:)", "8:52 PM"),
+            ("in", "John", "can you make a list I cannot\nremember all", "8:52 PM"),
         ])
 
     def test_one_to_one_has_no_member_names(self):
         self.assertTrue(all(m.sender == "" for m in parse_chat(TOP).messages))
 
-    def test_group_sender_stored(self):
+    def test_group_stored_with_members(self):
         db = open_db(":memory:")
-        ingest(db, "Cable Suppliers (5)", parse_chat(GROUP).messages, now=1)
-        rows = db.execute("SELECT sender, text FROM messages ORDER BY ts").fetchall()
-        self.assertEqual(rows[0][0], "Mr. Li")
-        self.assertEqual(rows[2][0], "me")
+        ingest(db, "John - Male Urin...anufacturer (12)", parse_chat(GROUP).messages, now=1)
+        self.assertEqual(db.execute("SELECT id, kind FROM convs").fetchone(),
+                         ("ui:John - Male Urin...anufacturer", "room"))
+        senders = [r[0] for r in db.execute("SELECT sender FROM messages ORDER BY ts")]
+        self.assertEqual(senders, ["Anthony Castro", "John", "Anthony Castro", "Anthony Castro", "John"])
+
+    def test_truncated_titles_match(self):
+        from scanner.parse import fuzzy_same
+        self.assertTrue(fuzzy_same("John - Male Urin...anufacturer (12)", "John - Male Urinal Manufacturer"))
+        self.assertTrue(fuzzy_same("John - Male Urinal Manuf...", "John - Male Urin...anufacturer (12)"))
+        self.assertTrue(fuzzy_same("Ilqa Khan", "Ilga Khan"))
+        self.assertFalse(fuzzy_same("Amna Tanveer", "Ilqa Khan"))
 
 
 class ListWalkTests(unittest.TestCase):

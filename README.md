@@ -35,7 +35,8 @@ Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB
 ## Limits (known)
 - Opening a chat marks it read on the phone.
 - Times are WeChat's separator labels ("7:49 PM"), stored as `shown_time`; the DB timestamp is scan time.
-- Group chats: the member name WeChat prints above each message is stored as the sender. Detection is by position and smaller font; it's tuned on a synthetic layout until checked against a real group screenshot (`ocr-dump`). If a name is missed, the sender falls back to the group name.
+- Group chats: the member name WeChat prints above each message is stored as the sender (checked on a real supplier group). If a name is missed, the sender falls back to the group name.
+- Pictures/files with no readable text are stored as `[picture/file]` from that member; reply quotes are appended as `(quoting Name: ...)`.
 - Text inside images (cards, price sheets) is stored as `[image text] ...` and may be partial.
 - Coordinates were measured on a Samsung A51 (1080x2400) and scale by screen width; other phones may need tuning.
 

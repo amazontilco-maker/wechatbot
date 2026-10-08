@@ -143,19 +143,34 @@ def parse_chat(lines, width=BASE_W, height=2400, group=None):
         else:
             items.append(["image", t, l])
 
-    if group:
-        _mark_member_names(items, s)
+    _mark_quotes(items)
 
-    label, prev, sender = "", None, ""
+    label, prev, sender, prev_y = "", None, "", 0
+    out_msgs = out.messages
+
+    def flush_name():
+        # a member name with no readable text under it = they sent a picture/file/sticker
+        nonlocal sender
+        if sender:
+            out_msgs.append(Message(side="image", text="[picture/file]", time_label=label, sender=sender))
+            sender = ""
+
     for kind, text, l in items:
         if kind == "time":
+            flush_name()
             label, prev = text, None
             continue
         if kind == "system":
+            flush_name()
             prev = None
             continue
         if kind == "name":
+            flush_name()
             sender, prev = text, None
+            continue
+        if kind == "quote":
+            if prev:  # WeChat shows "Name: quoted text" in a grey box under the reply
+                prev.text += f"\n(quoting {text})"
             continue
         # consecutive lines of one bubble are ~61px apart; separate bubbles are 130px+.
         # all text in one run of pictures/cards is kept together as one item
@@ -164,27 +179,25 @@ def parse_chat(lines, width=BASE_W, height=2400, group=None):
         else:
             prev = Message(side=kind, text=text, time_label=label, y=l.y1,
                            sender=sender if group and kind != "out" else "")
-            out.messages.append(prev)
+            out_msgs.append(prev)
             sender = ""   # each group message carries its own name label
         prev_y = l.y1
+    flush_name()
     return out
 
 
-def _mark_member_names(items, s):
-    """A group member name is a short line in a smaller font that starts a block of
-    their text and sits ~40-80px above the first bubble line."""
-    heights = sorted(l.y2 - l.y1 for k, _, l in items if k == "in")
-    if not heights:
-        return
-    typical = heights[len(heights) // 2]
-    for i, (kind, _, l) in enumerate(items):
-        if kind != "in" or i + 1 >= len(items):
+def _mark_quotes(items):
+    """A reply's quote box ("Name: text") sits under the reply bubble, in a smaller font.
+    Measured: message lines are 42-50px tall, the quote line 33px."""
+    for side in ("in", "out"):
+        heights = sorted(l.y2 - l.y1 for k, _, l in items if k == side)
+        if len(heights) < 3:
             continue
-        nxt = items[i + 1]
-        starts_block = i == 0 or items[i - 1][0] != "in" or l.y1 - items[i - 1][2].y1 > 90 * s
-        small = (l.y2 - l.y1) < 0.82 * typical
-        if starts_block and small and nxt[0] in ("in", "image") and 30 * s < nxt[2].y1 - l.y1 < 85 * s:
-            items[i][0] = "name"
+        typical = heights[len(heights) // 2]
+        for i, (kind, text, l) in enumerate(items):
+            if kind == side and i > 0 and items[i - 1][0] == side \
+                    and (l.y2 - l.y1) < 0.8 * typical and re.search(r"[:：]", text):
+                items[i][0] = "quote"
 
 
 def _overlap(older, newer):
@@ -214,8 +227,22 @@ def stitch(pages):
     return combined
 
 
+def _norm_title(n):
+    n = re.sub(r"\(\d+\)\s*$", "", n.lower()).strip()
+    return n.replace("…", "...")
+
+
 def fuzzy_same(a, b):
-    """OCR may misread a letter or two in names ('Ilqa' vs 'Ilga')."""
+    """Chat names as OCR'd in two places: a letter may differ ('Ilqa' vs 'Ilga') and WeChat
+    shortens long names with '...' differently in the list and the chat title."""
     from difflib import SequenceMatcher
-    a, b = a.lower().strip(), b.lower().strip()
-    return a == b or a in b or b in a or SequenceMatcher(None, a, b).ratio() >= 0.75
+    a, b = _norm_title(a), _norm_title(b)
+    if a == b or a in b or b in a:
+        return True
+    for x, y in ((a, b), (b, a)):
+        if "..." in x:
+            head, _, tail = x.partition("...")
+            head, tail = head.strip(), tail.strip()
+            if len(head) >= 6 and y.startswith(head[:12]) and (not tail or y.replace("...", "").endswith(tail[-8:])):
+                return True
+    return SequenceMatcher(None, a, b).ratio() >= 0.75
