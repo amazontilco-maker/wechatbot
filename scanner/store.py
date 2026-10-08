@@ -84,7 +84,7 @@ def ingest(db, title, messages, now=None):
     base = max(int((now or time.time()) * 1000), last + 1)
     for i, m in enumerate(fresh):
         direction = "out" if m.side == "out" else "in"
-        sender = "me" if direction == "out" else name
+        sender = "me" if direction == "out" else (m.sender or name)
         mtype = "image" if m.side == "image" else "text"
         text = f"[image text] {m.text}" if mtype == "image" else m.text
         mid = "scan:" + hashlib.sha1(f"{cid}|{base}|{i}|{m.text}".encode()).hexdigest()[:16]

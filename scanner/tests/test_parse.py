@@ -130,3 +130,89 @@ class StoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def hlines(raw):
+    """x1-x2,y1-y2  text  (with real heights)"""
+    out = []
+    for row in raw.strip().splitlines():
+        pos, text = row.strip().split("  ", 1)
+        xs, ys = pos.split(",")
+        x1, x2 = xs.split("-")
+        y1, y2 = ys.split("-")
+        out.append(Line(float(x1), float(y1), float(x2), float(y2), text))
+    return out
+
+
+# Synthetic group screen laid out like WeChat: grey member name (smaller font) above each bubble.
+GROUP = hlines("""
+380-700,120-175  Cable Suppliers (5)
+481-602,250-300  9:02 AM
+172-330,330-368  Mr. Li
+202-760,385-435  Price is 1.20 USD per meter
+202-520,446-496  for 5000 meters
+172-300,570-608  Wang
+202-610,625-675  Can deliver by 20th
+640-881,780-830  Noted, thanks
+202-330,900-938  Chen
+202-700,955-1005  Sample sent yesterday
+""")
+
+
+class GroupTests(unittest.TestCase):
+    def test_member_names(self):
+        s = parse_chat(GROUP)
+        got = [(m.side, m.sender, m.text) for m in s.messages]
+        self.assertEqual(got, [
+            ("in", "Mr. Li", "Price is 1.20 USD per meter\nfor 5000 meters"),
+            ("in", "Wang", "Can deliver by 20th"),
+            ("out", "", "Noted, thanks"),
+            ("in", "Chen", "Sample sent yesterday"),   # name at bubble x, found by its smaller font
+        ])
+
+    def test_one_to_one_has_no_member_names(self):
+        self.assertTrue(all(m.sender == "" for m in parse_chat(TOP).messages))
+
+    def test_group_sender_stored(self):
+        db = open_db(":memory:")
+        ingest(db, "Cable Suppliers (5)", parse_chat(GROUP).messages, now=1)
+        rows = db.execute("SELECT sender, text FROM messages ORDER BY ts").fetchall()
+        self.assertEqual(rows[0][0], "Mr. Li")
+        self.assertEqual(rows[2][0], "me")
+
+
+class ListWalkTests(unittest.TestCase):
+    def make(self, pages, unread=()):
+        from scanner.parse import ListRow
+        self.pos, self.opened, self.unread = 0, [], set(unread)
+        self.pages = pages
+
+        def snapshot():
+            return [ListRow(n, "", "", 300 + i * 194, unread=n in self.unread)
+                    for i, n in enumerate(self.pages[self.pos])]
+
+        def open_row(r):
+            self.opened.append(r.name)
+            self.unread.discard(r.name)
+
+        def scroll():
+            self.pos = min(self.pos + 1, len(self.pages) - 1)
+        return snapshot, open_row, scroll
+
+    def test_all_scrolls_to_end(self):
+        from scanner.__main__ import walk_list
+        snap, op, sc = self.make([["A", "B", "C", "D"], ["C", "D", "E", "F"], ["E", "F", "G"]])
+        walk_list(snap, op, sc, lambda r: True, max_pages=10)
+        self.assertEqual(self.opened, list("ABCDEFG"))
+
+    def test_unread_stops_at_first_page_without_badges(self):
+        from scanner.__main__ import walk_list
+        snap, op, sc = self.make([["A", "B", "C"], ["C", "D", "E"], ["E", "F", "G"]], unread={"B", "D"})
+        walk_list(snap, op, sc, lambda r: r.unread, max_pages=10, unread_only=True)
+        self.assertEqual(self.opened, ["B", "D"])
+
+    def test_one_chat_found_further_down(self):
+        from scanner.__main__ import walk_list
+        snap, op, sc = self.make([["A", "B"], ["C", "D"], ["E", "F"]])
+        walk_list(snap, op, sc, lambda r: r.name == "E", max_pages=10, limit=1)
+        self.assertEqual(self.opened, ["E"])

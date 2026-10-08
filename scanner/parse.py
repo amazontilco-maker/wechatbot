@@ -30,6 +30,7 @@ class Message:
     text: str
     time_label: str = ""  # nearest WeChat time separator above the message, as shown
     y: float = 0
+    sender: str = ""      # group chats: the member name WeChat shows above their message
 
     def key(self):
         # text read inside pictures varies with how much of the picture is on screen,
@@ -89,7 +90,10 @@ def parse_list(lines, width=BASE_W, height=2400):
     return rows
 
 
-def parse_chat(lines, width=BASE_W, height=2400):
+GROUP_TITLE = re.compile(r"\(\d+\)\s*$")   # WeChat group titles look like "Name (12)"
+
+
+def parse_chat(lines, width=BASE_W, height=2400, group=None):
     """An open chat -> title + messages in screen order (oldest at top).
 
     Rules measured from real screenshots:
@@ -97,11 +101,14 @@ def parse_chat(lines, width=BASE_W, height=2400):
       - my text ends ~882px from the left (before my avatar);
       - time separators and system notices are centred;
       - text that fits neither edge is inside an image/card bubble.
+    Group chats (title "Name (N)"): WeChat prints the member's name in small grey text
+    above each of their bubbles, starting a little left of the bubble text and in a
+    smaller font. That line becomes the message's sender.
     """
     s = _scale(width)
     top, bottom = 218 * s, height - 280 * s
     out = ChatScreen()
-    items = []
+    body = []
     for l in sorted(lines, key=lambda l: (l.y1, l.x1)):
         t = l.text.strip()
         if not t or l.y1 < 88 * s:          # status bar
@@ -114,20 +121,32 @@ def parse_chat(lines, width=BASE_W, height=2400):
             continue
         if l.x2 < 200 * s or l.x1 > 910 * s:  # text printed inside an avatar picture
             continue
+        body.append(l)
+    if group is None:
+        group = bool(GROUP_TITLE.search(out.title))
+
+    items = []
+    for l in body:
+        t = l.text.strip()
         mid = (l.x1 + l.x2) / 2
         centred = abs(mid - width / 2) < 60 * s
         if TIME_RE.match(t) and abs(mid - width / 2) < 120 * s:
-            items.append(("time", t, l))
+            items.append(["time", t, l])
+        elif group and 150 * s <= l.x1 < 180 * s:
+            items.append(["name", t, l])
         elif abs(l.x1 - 202 * s) <= 22 * s:
-            items.append(("in", t, l))
+            items.append(["in", t, l])
         elif abs(l.x2 - 882 * s) <= 22 * s:
-            items.append(("out", t, l))
+            items.append(["out", t, l])
         elif centred:
-            items.append(("system", t, l))
+            items.append(["system", t, l])
         else:
-            items.append(("image", t, l))
+            items.append(["image", t, l])
 
-    label, prev = "", None
+    if group:
+        _mark_member_names(items, s)
+
+    label, prev, sender = "", None, ""
     for kind, text, l in items:
         if kind == "time":
             label, prev = text, None
@@ -135,15 +154,37 @@ def parse_chat(lines, width=BASE_W, height=2400):
         if kind == "system":
             prev = None
             continue
+        if kind == "name":
+            sender, prev = text, None
+            continue
         # consecutive lines of one bubble are ~61px apart; separate bubbles are 130px+.
         # all text in one run of pictures/cards is kept together as one item
         if prev and prev.side == kind and (kind == "image" or l.y1 - prev_y <= 90 * s):
             prev.text += ("\n" if kind != "image" else " ") + text
         else:
-            prev = Message(side=kind, text=text, time_label=label, y=l.y1)
+            prev = Message(side=kind, text=text, time_label=label, y=l.y1,
+                           sender=sender if group and kind != "out" else "")
             out.messages.append(prev)
+            sender = ""   # each group message carries its own name label
         prev_y = l.y1
     return out
+
+
+def _mark_member_names(items, s):
+    """A group member name is a short line in a smaller font that starts a block of
+    their text and sits ~40-80px above the first bubble line."""
+    heights = sorted(l.y2 - l.y1 for k, _, l in items if k == "in")
+    if not heights:
+        return
+    typical = heights[len(heights) // 2]
+    for i, (kind, _, l) in enumerate(items):
+        if kind != "in" or i + 1 >= len(items):
+            continue
+        nxt = items[i + 1]
+        starts_block = i == 0 or items[i - 1][0] != "in" or l.y1 - items[i - 1][2].y1 > 90 * s
+        small = (l.y2 - l.y1) < 0.82 * typical
+        if starts_block and small and nxt[0] in ("in", "image") and 30 * s < nxt[2].y1 - l.y1 < 85 * s:
+            items[i][0] = "name"
 
 
 def _overlap(older, newer):
