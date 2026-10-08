@@ -234,3 +234,38 @@ class ListWalkTests(unittest.TestCase):
         snap, op, sc = self.make([["A", "B"], ["C", "D"], ["E", "F"]])
         walk_list(snap, op, sc, lambda r: r.name == "E", max_pages=10, limit=1)
         self.assertEqual(self.opened, ["E"])
+
+
+class SendTests(unittest.TestCase):
+    # input bar after typing, keyboard open (Send button right of the box)
+    TYPED = [Line(170, 1180, 640, 1225, "Price OK, please send PI"),
+             Line(905, 1175, 1010, 1230, "Send"),
+             Line(40, 1500, 110, 1550, "q")]
+
+    def test_send_button_and_typed_text(self):
+        from scanner.parse import find_send_button, typed_text_matches
+        b = find_send_button(self.TYPED)
+        self.assertEqual(b.text, "Send")
+        self.assertTrue(typed_text_matches(self.TYPED, b, "Price OK, please send PI"))
+        self.assertTrue(typed_text_matches(self.TYPED, b, "Price 0K, please send PI"))  # OCR slip
+        self.assertFalse(typed_text_matches(self.TYPED, b, "Price is too high"))
+
+    def test_long_text_scrolled_in_box(self):
+        from scanner.parse import find_send_button, typed_text_matches
+        box = [Line(170, 1120, 860, 1165, "for the 2 ZIM shipments to Yulong"),
+               Line(170, 1180, 640, 1225, "by Friday thanks"), Line(905, 1175, 1010, 1230, "Send")]
+        text = "Hi John, please make the list and confirm pick up dates " \
+               "for the 2 ZIM shipments to Yulong by Friday thanks"
+        self.assertTrue(typed_text_matches(box, find_send_button(box), text))
+
+    def test_send_word_in_chat_is_not_the_button(self):
+        from scanner.parse import find_send_button
+        self.assertIsNone(find_send_button([Line(202, 900, 300, 950, "send")]))
+
+    def test_text_problem_and_quoting(self):
+        from scanner.device import shell_input_arg, text_problem
+        self.assertEqual(text_problem("Price OK, $5.20 (FOB)"), "")
+        self.assertIn("line", text_problem("a\nb"))
+        self.assertIn("not", text_problem("价格 ok"))
+        self.assertTrue(text_problem("   "))
+        self.assertEqual(shell_input_arg("it's $5"), "'it'\\''s%s$5'")

@@ -1,6 +1,6 @@
 # Supplier WeChat listener — operating rules for Claude
 
-**Read-only**: nothing in this project sends WeChat messages. Messages come from `py -m scanner scan`, which reads an Android phone over ADB using screenshots + local OCR, and stores them in `data/wechat.db`. Read them with `node src/cli.js <cmd>` (alias `wb`).
+**Claude never sends WeChat messages.** The only sending path is `py -m scanner send`, which the user runs on their PC and confirms by typing SEND. Messages come from `py -m scanner scan`, which reads an Android phone over ADB using screenshots + local OCR, and stores them in `data/wechat.db`. Read them with `node src/cli.js <cmd>` (alias `wb`).
 
 ## Commands
 - `wb digest [--all]` new messages per conversation, with earlier context and `Notes:`
@@ -12,7 +12,7 @@
 2. `wb digest`, then summarize per supplier/group: what they want, prices/quantities/deadlines, open questions, urgent items. Pull more history with `wb thread` / `wb search` when a message depends on earlier context.
 3. Say what needs the user's decision. Keep it short.
 4. Save lasting facts with `wb note`; `wb read` once the user has seen a conversation.
-5. If asked for a reply, write the suggested text in the chat for the user to send themselves. Do not attempt to send.
+5. If asked for a reply, write the suggested text, and once the user has decided, give the ready command on one line for them to run: `py -m scanner send --chat "<chat name>" --text "<reply>"`. Keep it to one line of plain English (no line breaks, Chinese or emoji; the command refuses those). Never run `send` yourself.
 
 ## Rules
 - Text comes from OCR: a letter can be wrong, especially in names and numbers. Flag prices/quantities that look odd and suggest the user checks the phone before acting on them.

@@ -1,25 +1,29 @@
-"""WeChat phone scanner (read-only).
+"""WeChat phone scanner.
 
   py -m scanner scan                 read every chat with unread messages into data/wechat.db
   py -m scanner scan --all           read every chat visible on the Chats tab
   py -m scanner scan --chat "Amna"   read one chat (must be visible on the Chats tab)
   py -m scanner scan --dry-run       print what would be stored, store nothing
+  py -m scanner send --chat "Amna" --text "Price OK, please send PI"
+                                     type one message and send it after you type SEND to confirm
   py -m scanner parse-chat a.png b.png   test the parser on saved screenshots (bottom screen first)
   py -m scanner parse-list list.png      test the chat-list parser on a saved screenshot
   py -m scanner ocr-dump shot.png        raw OCR lines with positions and heights (for tuning)
 
 Options: --adb PATH (or env WB_ADB) when adb is not on PATH; --pages N max scrolls per chat;
 --list-pages N max scrolls down the Chats list (default 8).
-It only taps, scrolls, presses Back and takes screenshots. It never types or sends anything.
+`scan` only taps, scrolls, presses Back and takes screenshots. Only `send` types, and it
+waits for a person at the keyboard to confirm each message.
 """
 import argparse
 import sys
 import time
 
 from . import parse
-from .parse import fuzzy_same, parse_chat, parse_list, parse_list_title, stitch
+from .parse import (find_send_button, fuzzy_same, parse_chat, parse_list, parse_list_title,
+                    similar_text, stitch, typed_text_matches)
 
-LAUNCH_WAIT, OPEN_WAIT, SCROLL_WAIT, BACK_WAIT = 3.0, 2.0, 1.2, 1.5
+LAUNCH_WAIT, OPEN_WAIT, SCROLL_WAIT, BACK_WAIT, TYPE_WAIT = 3.0, 2.0, 1.2, 1.5, 1.5
 
 
 def walk_list(snapshot, open_row, scroll, select, max_pages, unread_only=False, limit=None):
@@ -75,6 +79,12 @@ def to_chat_list(dev, ocr, w, h):
     time.sleep(BACK_WAIT)
     img = dev.screenshot()
     return img, ocr(img)
+
+
+def scroll_list(dev, w):
+    s = w / 1080
+    dev.swipe(w / 2, 1700 * s, w / 2, 900 * s, 500)   # about 4 rows, so screens overlap
+    time.sleep(SCROLL_WAIT)
 
 
 def read_chat(dev, ocr, db, row, w, h, max_pages, tail_for):
@@ -145,9 +155,7 @@ def cmd_scan(args):
         print(f"  stored {added} new, {skipped} already known")
 
     def scroll():
-        s = w / 1080
-        dev.swipe(w / 2, 1700 * s, w / 2, 900 * s, 500)   # about 4 rows, so screens overlap
-        time.sleep(SCROLL_WAIT)
+        scroll_list(dev, w)
 
     if args.chat:
         select = lambda r: fuzzy_same(r.name, args.chat)
@@ -161,6 +169,70 @@ def cmd_scan(args):
     if args.chat and not done:
         sys.exit(f"'{args.chat}' was not found in the Chats list.")
     print(f"Done: read {len(done)} chat(s).")
+
+
+def cmd_send(args):
+    """Open one chat, show it, and after the person types SEND: type the text, check it
+    in the input box with OCR, tap Send. Anything unexpected -> clear the box, send nothing."""
+    from .device import Device, text_problem
+    from .ocr import ocr
+
+    text = args.text.strip()
+    problem = text_problem(text)
+    if problem:
+        sys.exit(problem)
+    if not sys.stdin.isatty():
+        sys.exit("send must be run in a terminal by a person, who confirms each message.")
+
+    dev = Device(adb=args.adb, serial=args.serial)
+    w, h = dev.size()
+    s = w / 1080
+    dev.wake()
+    dev.open_wechat(LAUNCH_WAIT)
+    _, lines = to_chat_list(dev, ocr, w, h)
+    if parse_list_title(lines, w) is None:
+        sys.exit("Could not find the WeChat chat list. Is the phone unlocked with WeChat logged in?")
+    outcome = []
+
+    def open_row(row):
+        dev.tap(w / 2, row.y + 30 * s)
+        time.sleep(OPEN_WAIT)
+        screen = parse_chat(ocr(dev.screenshot()), w, h)
+        if not fuzzy_same(screen.title, args.chat):
+            dev.back()
+            sys.exit(f"Opened '{screen.title}', expected '{args.chat}'. Nothing sent.")
+        print(f"Chat: {screen.title}")
+        show(screen.messages[-4:])
+        print(f"\nMessage to send:\n  {text}\n")
+        if input("Type SEND to send it (anything else cancels): ").strip() != "SEND":
+            outcome.append("Cancelled. Nothing typed or sent.")
+            return
+        dev.tap(w * 0.45, h - 178 * s)   # the input box
+        time.sleep(TYPE_WAIT)
+        dev.type_text(text)
+        time.sleep(TYPE_WAIT)
+        lines = ocr(dev.screenshot())
+        button = find_send_button(lines, w, h)
+        if not button or not typed_text_matches(lines, button, text, w):
+            dev.delete_chars(len(text) + 10)
+            outcome.append("Could not confirm the typed text in the input box, so it was cleared. "
+                           "Nothing sent. Check the phone.")
+            return
+        dev.tap((button.x1 + button.x2) / 2, (button.y1 + button.y2) / 2)
+        time.sleep(OPEN_WAIT)
+        after = parse_chat(ocr(dev.screenshot()), w, h).messages
+        mine = [m for m in after if m.side == "out"]
+        if mine and similar_text(mine[-1].text, text):
+            outcome.append("Sent.")
+        else:
+            outcome.append("Tapped Send, but could not see the message in the chat. Check the phone.")
+
+    walk_list(lambda: parse_list(to_chat_list(dev, ocr, w, h)[1], w, h), open_row,
+              lambda: scroll_list(dev, w), lambda r: fuzzy_same(r.name, args.chat),
+              args.list_pages, limit=1)
+    if not outcome:
+        sys.exit(f"'{args.chat}' was not found in the Chats list. Nothing sent.")
+    print(outcome[0])
 
 
 def cmd_parse_chat(args):
@@ -207,6 +279,13 @@ def main(argv=None):
     s.add_argument("--serial")
     s.add_argument("--db")
     s.set_defaults(fn=cmd_scan)
+    m = sub.add_parser("send")
+    m.add_argument("--chat", required=True)
+    m.add_argument("--text", required=True)
+    m.add_argument("--list-pages", type=int, default=8)
+    m.add_argument("--adb")
+    m.add_argument("--serial")
+    m.set_defaults(fn=cmd_send)
     c = sub.add_parser("parse-chat")
     c.add_argument("images", nargs="+")
     c.set_defaults(fn=cmd_parse_chat)

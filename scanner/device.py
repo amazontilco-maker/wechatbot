@@ -1,11 +1,30 @@
-"""Read-only control of the Android phone over ADB: screenshots, taps, scrolls, back.
-Nothing in this module types text or sends messages."""
+"""Control of the Android phone over ADB: screenshots, taps, scrolls, back, and typing
+text for `scanner send` (which asks a person to confirm before anything is sent)."""
 import os
 import re
 import subprocess
 import time
 
 WECHAT = "com.tencent.mm"
+
+
+def text_problem(text):
+    """Why `text` can't be typed with `adb shell input text`, or "" if it can."""
+    if not text.strip():
+        return "The message is empty."
+    if "\n" in text or "\r" in text:
+        return "Only one line per message for now (no line breaks)."
+    bad = sorted({c for c in text if not (" " <= c <= "~")})
+    if bad:
+        return f"Only plain English letters, digits and punctuation can be typed for now; not: {' '.join(bad)}"
+    if "%s" in text:
+        return "'%s' can't be typed (adb turns it into a space)."
+    return ""
+
+
+def shell_input_arg(chunk):
+    """Quote text for the phone's shell: spaces become %s for `input text`, the rest is single-quoted."""
+    return "'" + chunk.replace(" ", "%s").replace("'", "'\\''") + "'"
 
 
 class Device:
@@ -48,6 +67,16 @@ class Device:
 
     def swipe(self, x1, y1, x2, y2, ms=400):
         self.run("shell", "input", "swipe", *(str(int(v)) for v in (x1, y1, x2, y2, ms)))
+
+    def type_text(self, text):
+        """Type into the focused text box. Check text_problem() first."""
+        for i in range(0, len(text), 80):
+            self.run("shell", "input", "text", shell_input_arg(text[i:i + 80]))
+
+    def delete_chars(self, n):
+        self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+        for i in range(0, n, 50):
+            self.run("shell", "input", "keyevent", *["KEYCODE_DEL"] * min(50, n - i))
 
     def back(self):
         self.run("shell", "input", "keyevent", "KEYCODE_BACK")

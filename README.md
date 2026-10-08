@@ -1,6 +1,6 @@
 # wechatbot
 
-Reads WeChat supplier chats from an always-on Android phone, stores them in a local SQLite DB, and lets Claude brief you on them. **Read-only:** nothing here types or sends messages; you reply yourself.
+Reads WeChat supplier chats from an always-on Android phone, stores them in a local SQLite DB, and lets Claude brief you on them. Replies go out only through `py -m scanner send`, which you run and confirm yourself.
 
 ## How it works
 WeChat hides its screen text from Android's accessibility tools, so the scanner reads it the way a person would:
@@ -29,6 +29,12 @@ py -m scanner parse-chat chat.png chat2.png     (bottom screen first, then each 
 py -m scanner parse-list list.png
 py -m scanner ocr-dump shot.png                 (raw OCR with positions/heights, for tuning)
 ```
+
+Send a reply (you confirm each one):
+```
+py -m scanner send --chat "Amna" --text "Price OK, please send PI"
+```
+It opens the chat, shows the last messages and your text, and waits for you to type `SEND`. Then it types the text, checks the input box with OCR (if it doesn't match, it clears the box and sends nothing), taps Send and checks the message appears. One line of plain English only for now: no line breaks, Chinese or emoji. It refuses to run without a person at the terminal.
 
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 

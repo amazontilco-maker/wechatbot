@@ -246,3 +246,37 @@ def fuzzy_same(a, b):
             if len(head) >= 6 and y.startswith(head[:12]) and (not tail or y.replace("...", "").endswith(tail[-8:])):
                 return True
     return SequenceMatcher(None, a, b).ratio() >= 0.75
+
+
+def find_send_button(lines, width=BASE_W, height=2400):
+    """The green 'Send' button WeChat shows right of the input box once text is typed."""
+    s = _scale(width)
+    hits = [l for l in lines if l.text.strip().lower() == "send" and l.x1 > 780 * s and l.y1 > height * 0.3]
+    return max(hits, key=lambda l: l.y1) if hits else None
+
+
+def _plain(t):
+    return re.sub(r"[^a-z0-9]", "", t.lower())
+
+
+def similar_text(a, b):
+    """Same message, allowing for OCR misreading a few letters."""
+    from difflib import SequenceMatcher
+    a, b = _plain(a), _plain(b)
+    return bool(a and b) and SequenceMatcher(None, a, b).ratio() >= 0.85
+
+
+def typed_text_matches(lines, send, text, width=BASE_W):
+    """Is `text` what the input box (left of the Send button) shows? A long text
+    scrolls inside the box, so the visible part is compared with the end of `text`."""
+    from difflib import SequenceMatcher
+    s = _scale(width)
+    box = [l for l in lines if l.x2 <= send.x1 + 5 * s and l.x1 > 60 * s
+           and l.y2 > send.y1 - 280 * s and l.y1 < send.y2 + 40 * s]
+    seen = _plain("".join(l.text for l in sorted(box, key=lambda l: (l.y1, l.x1))))
+    want = _plain(text)
+    if not seen or not want:
+        return False
+    if len(seen) < min(len(want), 20) * 0.6:
+        return False
+    return seen in want or SequenceMatcher(None, seen, want[-len(seen):]).ratio() >= 0.8
