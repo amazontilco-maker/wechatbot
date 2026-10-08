@@ -314,3 +314,31 @@ class MemberPickerTests(unittest.TestCase):
         self.assertEqual([r.text for r in pick_member(rows, "ilqa")], ["Ilqa Khan"])
         self.assertEqual([r.text for r in pick_member(rows, "Umer Javaid")], ["umer Javaid"])
         self.assertEqual(pick_member(rows, "Bob"), [])
+
+
+class MultiLineBubbleTests(unittest.TestCase):
+    def test_my_wrapped_message_stays_one_message(self):
+        # real OCR, Ilqa chat: my 3-line bubble with a blank line inside
+        shot = [Line(435, 132, 625, 180, "Ilqa Khan"),
+                Line(201, 226, 465, 273, "I'm Ilqa Khan"),
+                Line(92, 345, 981, 381, "You've added ilga Khan . Greetings are shown above"),
+                Line(365, 453, 561, 502, "Hello Ilqa"),
+                Line(367, 513, 868, 560, "Nice to connect with you"),
+                Line(366, 628, 683, 681, "how is your day"),
+                Line(480, 787, 603, 817, "6:48 PM"),
+                Line(202, 922, 464, 966, "I'm Ilga Khan")]
+        msgs = parse_chat(shot).messages
+        self.assertEqual([(m.side, m.text) for m in msgs], [
+            ("in", "I'm Ilqa Khan"),
+            ("out", "Hello Ilqa\nNice to connect with you\nhow is your day"),
+            ("in", "I'm Ilga Khan")])
+
+    def test_sent_tagged_message_two_lines(self):
+        from scanner.parse import similar_text
+        shot = [Line(373, 130, 691, 180, "AI test group(4)"),
+                Line(290, 1000, 870, 1045, "@Amna Tanveer Test message"),
+                Line(291, 1061, 700, 1106, "from AI, please ignore")]
+        msgs = parse_chat(shot).messages
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0].side, "out")
+        self.assertTrue(similar_text(msgs[0].text, "@Amna Tanveer Test message from AI, please ignore"))

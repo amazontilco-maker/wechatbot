@@ -143,9 +143,10 @@ def parse_chat(lines, width=BASE_W, height=2400, group=None):
         else:
             items.append(["image", t, l])
 
+    _join_bubble_lines(items, s)
     _mark_quotes(items)
 
-    label, prev, sender, prev_y = "", None, "", 0
+    label, prev, sender, prev_y, prev_x = "", None, "", 0, 0
     out_msgs = out.messages
 
     def flush_name():
@@ -174,16 +175,38 @@ def parse_chat(lines, width=BASE_W, height=2400, group=None):
             continue
         # consecutive lines of one bubble are ~61px apart; separate bubbles are 130px+.
         # all text in one run of pictures/cards is kept together as one item
-        if prev and prev.side == kind and (kind == "image" or l.y1 - prev_y <= 90 * s):
+        # (a blank line inside a bubble leaves a ~115px gap, but the lines stay left-aligned)
+        gap = l.y1 - prev_y
+        if prev and prev.side == kind and (kind == "image" or gap <= 90 * s
+                                           or (gap <= 125 * s and abs(l.x1 - prev_x) <= 12 * s)):
             prev.text += ("\n" if kind != "image" else " ") + text
         else:
             prev = Message(side=kind, text=text, time_label=label, y=l.y1,
                            sender=sender if group and kind != "out" else "")
             out_msgs.append(prev)
             sender = ""   # each group message carries its own name label
-        prev_y = l.y1
+        prev_y, prev_x = l.y1, l.x1
     flush_name()
     return out
+
+
+def _join_bubble_lines(items, s):
+    """Lines of a multi-line bubble are left-aligned, so only the longest one reaches the
+    bubble's right edge. My shorter lines then fit neither edge and look like picture text;
+    give them the side of a left-aligned neighbouring line in the same bubble."""
+    changed = True
+    while changed:
+        changed = False
+        for i, (kind, _, l) in enumerate(items):
+            if kind not in ("image", "system"):
+                continue
+            for j in (i - 1, i + 1):
+                if 0 <= j < len(items) and items[j][0] in ("in", "out"):
+                    o = items[j][2]
+                    if abs(o.x1 - l.x1) <= 12 * s and abs(o.y1 - l.y1) <= 125 * s:
+                        items[i][0] = items[j][0]
+                        changed = True
+                        break
 
 
 def _mark_quotes(items):

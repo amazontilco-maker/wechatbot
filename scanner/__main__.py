@@ -278,6 +278,8 @@ def cmd_send(args):
         if mine and similar_text(mine[-1].text, typed):
             outcome.append("Sent.")
         else:
+            print("Messages read after sending:")
+            show(after[-4:])
             outcome.append("Tapped Send, but could not see the message in the chat. Check the phone.")
 
     walk_list(lambda: parse_list(to_chat_list(dev, ocr, w, h)[1], w, h), open_row,
