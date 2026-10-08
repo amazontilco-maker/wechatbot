@@ -36,6 +36,8 @@ py -m scanner send --chat "Amna" --text "Price OK, please send PI"
 ```
 It opens the chat, shows the last messages and your text, and waits for you to type `SEND`. Then it types the text, checks the input box with OCR (if it doesn't match, it clears the box and sends nothing), taps Send and checks the message appears. One line of plain English only for now: no line breaks, Chinese or emoji. It refuses to run without a person at the terminal.
 
+In a group, `--tag "John"` @mentions a member: it types `@`, picks the member from WeChat's list (scrolling it if needed), then types the text. If the name isn't in the list or matches several members, it undoes the `@` and sends nothing.
+
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 
 ## Limits (known)

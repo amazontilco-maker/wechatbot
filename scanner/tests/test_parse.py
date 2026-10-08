@@ -286,3 +286,31 @@ class SendTests(unittest.TestCase):
         self.assertEqual(b.y1, 1312)
         self.assertTrue(typed_text_matches(shot, b, "Test message"))
         self.assertFalse(typed_text_matches(shot, b, "Hey hello bye bye who are you??"))
+
+
+class MemberPickerTests(unittest.TestCase):
+    # real OCR: "AI test group(4)" after typing '@' in the input box
+    SHOT = [Line(373, 130, 691, 180, "Al test group(4)"),
+            Line(126, 402, 942, 438, "umer Javaid invited you to a group chat with llga"),
+            Line(174, 532, 352, 564, "umer Javaid"),
+            Line(474, 644, 607, 690, "Select"), Line(874, 645, 1040, 690, "Multiple"),
+            Line(86, 785, 292, 829, "Q Search"),
+            Line(194, 1033, 487, 1076, "Amna Tanveer"),
+            Line(192, 1282, 386, 1329, "Ilqa Khan"), Line(85, 1284, 151, 1305, "TILCO"),
+            Line(194, 1532, 442, 1571, "umer Javaid")]
+
+    def test_rows(self):
+        from scanner.parse import parse_member_picker
+        rows = parse_member_picker(self.SHOT)
+        self.assertEqual([r.text for r in rows], ["Amna Tanveer", "Ilqa Khan", "umer Javaid"])
+
+    def test_not_open(self):
+        from scanner.parse import parse_member_picker
+        self.assertIsNone(parse_member_picker(self.SHOT[:3]))
+
+    def test_pick(self):
+        from scanner.parse import parse_member_picker, pick_member
+        rows = parse_member_picker(self.SHOT)
+        self.assertEqual([r.text for r in pick_member(rows, "ilqa")], ["Ilqa Khan"])
+        self.assertEqual([r.text for r in pick_member(rows, "Umer Javaid")], ["umer Javaid"])
+        self.assertEqual(pick_member(rows, "Bob"), [])

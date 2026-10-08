@@ -259,6 +259,28 @@ def _plain(t):
     return re.sub(r"[^a-z0-9]", "", t.lower())
 
 
+def parse_member_picker(lines, width=BASE_W, height=2400):
+    """The member list WeChat opens when '@' is typed in a group: a sheet titled 'Select'
+    with a Search box, then one member name per row. Returns the name lines, or None
+    if the list isn't open."""
+    s = _scale(width)
+    title = [l for l in lines if l.text.strip().lower() == "select"
+             and abs((l.x1 + l.x2) / 2 - width / 2) < 120 * s]
+    if not title:
+        return None
+    top = title[0].y2
+    search = [l for l in lines if "search" in l.text.lower() and l.y1 > top]
+    start = search[0].y2 if search else top
+    return [l for l in lines if l.y1 > start + 20 * s and l.y1 < height - 150 * s
+            and 150 * s <= l.x1 <= 260 * s]
+
+
+def pick_member(rows, name):
+    """Rows matching `name`: an exact match wins, otherwise every close match."""
+    exact = [r for r in rows if _plain(r.text) == _plain(name)]
+    return exact[:1] or [r for r in rows if fuzzy_same(r.text, name)]
+
+
 def similar_text(a, b):
     """Same message, allowing for OCR misreading a few letters."""
     from difflib import SequenceMatcher

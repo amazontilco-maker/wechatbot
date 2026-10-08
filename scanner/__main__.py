@@ -6,6 +6,7 @@
   py -m scanner scan --dry-run       print what would be stored, store nothing
   py -m scanner send --chat "Amna" --text "Price OK, please send PI"
                                      type one message and send it after you type SEND to confirm
+  py -m scanner send --chat "AI test group" --tag "Ilqa" --text "..."   same, @mentioning a group member
   py -m scanner parse-chat a.png b.png   test the parser on saved screenshots (bottom screen first)
   py -m scanner parse-list list.png      test the chat-list parser on a saved screenshot
   py -m scanner ocr-dump shot.png        raw OCR lines with positions and heights (for tuning)
@@ -21,7 +22,7 @@ import time
 
 from . import parse
 from .parse import (find_send_button, fuzzy_same, parse_chat, parse_list, parse_list_title,
-                    similar_text, stitch, typed_text_matches)
+                    parse_member_picker, pick_member, similar_text, stitch, typed_text_matches)
 
 LAUNCH_WAIT, OPEN_WAIT, SCROLL_WAIT, BACK_WAIT, TYPE_WAIT = 3.0, 2.0, 1.2, 1.5, 1.5
 
@@ -171,6 +172,38 @@ def cmd_scan(args):
     print(f"Done: read {len(done)} chat(s).")
 
 
+def tag_member(dev, ocr, w, h, name):
+    """Type '@' in a group's input box and pick `name` from WeChat's member list.
+    Returns (member name as shown, "") or (None, why) after undoing the '@'."""
+    s = w / 1080
+    dev.type_text("@")
+    time.sleep(OPEN_WAIT)
+    seen, why = None, f"'{name}' is not in the group's member list."
+    for _ in range(5):
+        rows = parse_member_picker(ocr(dev.screenshot()), w, h)
+        if rows is None:
+            dev.delete_chars(1)
+            return None, "WeChat's member list didn't open after typing @."
+        hits = pick_member(rows, name)
+        if len(hits) == 1:
+            dev.tap((hits[0].x1 + hits[0].x2) / 2, (hits[0].y1 + hits[0].y2) / 2)
+            time.sleep(TYPE_WAIT)
+            return hits[0].text.strip(), ""
+        if hits:
+            why = f"'{name}' matches several members ({', '.join(r.text for r in hits)}); use a fuller name."
+            break
+        names = [r.text for r in rows]
+        if names == seen:
+            break   # end of the list
+        seen = names
+        dev.swipe(w / 2, 1800 * s, w / 2, 1200 * s, 400)
+        time.sleep(SCROLL_WAIT)
+    dev.back()   # close the member list; the '@' stays in the box
+    time.sleep(BACK_WAIT)
+    dev.delete_chars(2)
+    return None, why
+
+
 def cmd_send(args):
     """Open one chat, show it, and after the person types SEND: type the text, check it
     in the input box with OCR, tap Send. Anything unexpected -> clear the box, send nothing."""
@@ -178,7 +211,8 @@ def cmd_send(args):
     from .ocr import ocr
 
     text = args.text.strip()
-    problem = text_problem(text)
+    tag = (args.tag or "").strip().lstrip("@").strip()
+    problem = text_problem(text) or (args.tag is not None and text_problem(tag))
     if problem:
         sys.exit(problem)
     if not sys.stdin.isatty():
@@ -201,23 +235,33 @@ def cmd_send(args):
         if not fuzzy_same(screen.title, args.chat):
             dev.back()
             sys.exit(f"Opened '{screen.title}', expected '{args.chat}'. Nothing sent.")
+        if tag and not parse.GROUP_TITLE.search(screen.title):
+            dev.back()
+            sys.exit(f"'{screen.title}' is not a group chat, so --tag can't be used. Nothing sent.")
         print(f"Chat: {screen.title}")
         show(screen.messages[-4:])
-        print(f"\nMessage to send:\n  {text}\n")
+        print(f"\nMessage to send:\n  {'@' + tag + ' ' if tag else ''}{text}\n")
         if input("Type SEND to send it (anything else cancels): ").strip() != "SEND":
             outcome.append("Cancelled. Nothing typed or sent.")
             return
         dev.tap(w * 0.45, h - 178 * s)   # the input box
         time.sleep(TYPE_WAIT)
+        typed = text
+        if tag:
+            member, why = tag_member(dev, ocr, w, h, tag)
+            if not member:
+                outcome.append(f"{why} Nothing sent.")
+                return
+            typed = f"@{member} {text}"   # WeChat puts '@Name ' in the box
         dev.type_text(text)
         time.sleep(TYPE_WAIT)
         img = dev.screenshot()
         lines = ocr(img)
         button = find_send_button(lines, w, h)
-        if not button or not typed_text_matches(lines, button, text, w):
+        if not button or not typed_text_matches(lines, button, typed, w):
             import cv2
             cv2.imwrite("send_check.png", img)
-            dev.delete_chars(len(text) + 10)
+            dev.delete_chars(len(typed) + 10)
             why = "no Send button found" if not button else "the text in the box didn't match"
             print(f"Check failed: {why}. Screenshot saved as send_check.png. Text seen in the lower screen:")
             for l in sorted(lines, key=lambda l: (l.y1, l.x1)):
@@ -231,7 +275,7 @@ def cmd_send(args):
         after = parse_chat(ocr(dev.screenshot()), w, h).messages
         # the keyboard is still open: only bubbles above the input bar are chat messages
         mine = [m for m in after if m.side == "out" and m.y < button.y1 - 40 * s]
-        if mine and similar_text(mine[-1].text, text):
+        if mine and similar_text(mine[-1].text, typed):
             outcome.append("Sent.")
         else:
             outcome.append("Tapped Send, but could not see the message in the chat. Check the phone.")
@@ -291,6 +335,7 @@ def main(argv=None):
     m = sub.add_parser("send")
     m.add_argument("--chat", required=True)
     m.add_argument("--text", required=True)
+    m.add_argument("--tag", help="group chats: member to @mention at the start of the message")
     m.add_argument("--list-pages", type=int, default=8)
     m.add_argument("--adb")
     m.add_argument("--serial")

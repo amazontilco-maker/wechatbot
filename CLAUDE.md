@@ -12,7 +12,7 @@
 2. `wb digest`, then summarize per supplier/group: what they want, prices/quantities/deadlines, open questions, urgent items. Pull more history with `wb thread` / `wb search` when a message depends on earlier context.
 3. Say what needs the user's decision. Keep it short.
 4. Save lasting facts with `wb note`; `wb read` once the user has seen a conversation.
-5. If asked for a reply, write the suggested text, and once the user has decided, give the ready command on one line for them to run: `py -m scanner send --chat "<chat name>" --text "<reply>"`. Keep it to one line of plain English (no line breaks, Chinese or emoji; the command refuses those). Never run `send` yourself.
+5. If asked for a reply, write the suggested text, and once the user has decided, give the ready command on one line for them to run: `py -m scanner send --chat "<chat name>" --text "<reply>"` (in a group, add `--tag "<member>"` to @mention someone; don't put `@` in the text). Keep it to one line of plain English (no line breaks, Chinese or emoji; the command refuses those). Never run `send` yourself.
 
 ## Rules
 - Text comes from OCR: a letter can be wrong, especially in names and numbers. Flag prices/quantities that look odd and suggest the user checks the phone before acting on them.
