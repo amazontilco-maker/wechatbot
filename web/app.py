@@ -1,24 +1,30 @@
-"""The team web app: login, chat inbox, thread view, search and notes.
+"""The team web app: login, Today, chat inbox and thread view, stock risk, search and notes.
 
 Pages are plain server-rendered HTML (no JavaScript needed). The server listens on
 127.0.0.1 only; people outside the office reach it through Cloudflare Tunnel.
 """
+import json
+import os
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth
-from .db import CATEGORIES, audit, can, connect
+from scanner.store import DEFAULT_DB
+
+from . import auth, stock
+from .db import CATEGORIES, audit, can, connect, get_setting, set_setting
 
 HERE = Path(__file__).resolve().parent
 COOKIE = "wb_session"
 PAGE = 100   # messages per thread page
+MAX_UPLOAD = 80 * 1024 * 1024
 
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 
@@ -163,7 +169,8 @@ def create_app(db_path=None):
         chats = chat_list(db, user)
         waiting = [c for c in chats if c["new"]]
         counts = {k: sum(1 for c in chats if c["category"] == k) for k in CATEGORIES}
-        return page(request, "today.html", section="today", waiting=waiting[:8],
+        risk = stock_report(db)
+        return page(request, "today.html", section="today", waiting=waiting[:8], risk=risk,
                     new_total=sum(c["new"] for c in chats), chats_waiting=len(waiting), counts=counts)
 
     @app.get("/messages", response_class=HTMLResponse)
@@ -207,6 +214,103 @@ def create_app(db_path=None):
             audit(db, user["name"], "chat type", f"{id}: {category}")
         return RedirectResponse(f"/chat?id={quote(id, safe='')}", status_code=303)
 
+    # ---------- stock risk ----------
+    data_dir = Path(db_path or os.environ.get("WB_DB") or DEFAULT_DB).resolve().parent
+    cache, cache_lock = {}, threading.Lock()
+
+    def stock_file(db):
+        """The workbook to read: a path set on the PC (e.g. a Google Drive for desktop folder),
+        else the last file uploaded in the app."""
+        return Path(get_setting(db, "stock_path") or data_dir / "stock.xlsx")
+
+    def stock_settings(db, request=None):
+        q = request.query_params if request else {}
+        st = q.get("stock") if q.get("stock") in stock.STOCK_MEASURES else get_setting(db, "stock_measure", "onhand")
+        sa = q.get("sales") if q.get("sales") in stock.SALES_MEASURES else get_setting(db, "sales_measure", "max")
+        return {"tabs": json.loads(get_setting(db, "stock_tabs", "[]")),
+                "threshold": int(get_setting(db, "stock_threshold", "60")), "stock": st, "sales": sa}
+
+    def load_tabs(path, names):
+        """Parsed tabs, re-read only when the file changes (a 5 MB workbook takes seconds)."""
+        key = (str(path), path.stat().st_mtime_ns, tuple(names))
+        with cache_lock:
+            if key not in cache:
+                cache.clear()
+                cache[key] = stock.read_tabs(path, names)
+            return cache[key]
+
+    def stock_report(db, request=None):
+        """Everything the Stock risk page and the Today card show; None if not set up yet."""
+        cfg = stock_settings(db, request)
+        path = stock_file(db)
+        if not path.exists():
+            return {"cfg": cfg, "path": path, "error": "", "ready": False}
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y %H:%M")
+            tabs = load_tabs(path, cfg["tabs"]) if cfg["tabs"] else []
+        except Exception as e:   # a broken or half-synced file shouldn't take the page down
+            return {"cfg": cfg, "path": path, "error": f"Could not read the file: {e}", "ready": False}
+        rows, counts = stock.risk_rows(tabs, cfg["stock"], cfg["sales"], cfg["threshold"])
+        return {"cfg": cfg, "path": path, "error": "", "ready": bool(cfg["tabs"]), "mtime": mtime,
+                "tabs": tabs, "rows": rows, "counts": counts,
+                "flagged": counts["out"] + counts["critical"] + counts["low"]}
+
+    @app.get("/risk", response_class=HTMLResponse)
+    def risk(request: Request, tab: str = "", show: str = "flagged", user=Depends(current), db=Depends(get_db)):
+        rep = stock_report(db, request)
+        all_tabs = []
+        if rep["path"].exists() and not rep["error"]:
+            try:
+                all_tabs = stock.tab_names(rep["path"])
+            except Exception as e:
+                rep["error"] = f"Could not read the file: {e}"
+        rows = rep.get("rows", [])
+        if tab:
+            rows = [r for r in rows if r["item"].tab == tab]
+        if show == "flagged":
+            rows = [r for r in rows if r["level"] in ("out", "critical", "low")]
+        return page(request, "risk.html", section="risk", rep=rep, rows=rows, tab=tab, show=show,
+                    all_tabs=all_tabs, can_set=can(user, "approver"), from_pc=bool(get_setting(db, "stock_path")),
+                    stock_measures=stock.STOCK_MEASURES, sales_measures=stock.SALES_MEASURES)
+
+    @app.post("/risk/upload")
+    async def risk_upload(request: Request, file: UploadFile = File(...), csrf: str = Form(""),
+                          user=Depends(needs("approver")), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        data = await file.read(MAX_UPLOAD + 1)
+        if len(data) > MAX_UPLOAD or not data.startswith(b"PK"):   # .xlsx files are zip archives
+            return page(request, "message.html", 400, title="Upload failed",
+                        text="That isn't an Excel .xlsx file (or it is over 80 MB).")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        tmp = data_dir / "stock.upload.xlsx"
+        tmp.write_bytes(data)
+        try:
+            stock.tab_names(tmp)
+        except Exception as e:
+            tmp.unlink(missing_ok=True)
+            return page(request, "message.html", 400, title="Upload failed", text=f"Could not open it as Excel: {e}")
+        os.replace(tmp, data_dir / "stock.xlsx")
+        audit(db, user["name"], "stock file", f"uploaded {file.filename} ({len(data) // 1024} KB)")
+        return RedirectResponse("/risk", status_code=303)
+
+    @app.post("/risk/settings")
+    async def risk_settings(request: Request, user=Depends(needs("approver")), db=Depends(get_db)):
+        form = await request.form()
+        check_csrf(request, form.get("csrf"))
+        tabs = [t for t in form.getlist("tabs") if isinstance(t, str)]
+        try:
+            threshold = max(1, min(365, int(form.get("threshold") or 60)))
+        except ValueError:
+            threshold = 60
+        set_setting(db, "stock_tabs", json.dumps(tabs))
+        set_setting(db, "stock_threshold", threshold)
+        if form.get("stock") in stock.STOCK_MEASURES:
+            set_setting(db, "stock_measure", form.get("stock"))
+        if form.get("sales") in stock.SALES_MEASURES:
+            set_setting(db, "sales_measure", form.get("sales"))
+        audit(db, user["name"], "stock settings", f"{threshold} days; tabs: {', '.join(tabs)}")
+        return RedirectResponse("/risk", status_code=303)
+
     # sections that later milestones fill in; each page says what will appear there
     SOON = {
         "shipments": ("Shipments", "M2", "Every inbound shipment from the stock sheet, per market: SKU, route "
@@ -219,8 +323,6 @@ def create_app(db_path=None):
         "chasers": ("ETA chasers", "M5", "Shipments nobody has confirmed for a few days, grouped by forwarder, "
                     "with a drafted message asking for an update. Approve & send goes through the phone.",
                     ["Forwarder", "Shipments", "Last confirmed", "Draft"]),
-        "risk": ("Stock risk", "M6", "SKUs that run out before their next shipment arrives, with options "
-                 "(air, AWD/3PL transfer, slower sales).", ["Market", "SKU", "Runs out", "Next ETA", "Gap"]),
         "approvals": ("Approvals", "step 2", "Replies waiting to be approved, with Approve & send and Reject.",
                       ["Chat", "Message", "Asked by", "When"]),
         "health": ("Health", "step 3", "Phone connected, WeChat logged in, last scan, next scan, phone queue.",

@@ -73,7 +73,8 @@ Merge to `main` when a milestone is done and tested on the real phone.
 - Find shipments not confirmed in N days, grouped by forwarder; draft one message per group
   listing the shipments; approve & send via M1; re-ask next morning if no reply.
 
-**M6 — Stockout risk**
+**M6 — Stockout risk** (first version built early, in the web app: Stock risk page reads the .xlsx stock
+workbook, flags SKUs under N days of stock (default 60) by Amazon / on hand / on hand + inbound)
 - From the sheet's sales and stock columns: runs-out date vs ETA, flag gaps, suggest options
   (air, AWD/3PL transfer, slow sales). Drafts only.
 

@@ -51,7 +51,8 @@ class AppTest(unittest.TestCase):
         self.client = TestClient(create_app(self.path))
 
     def tearDown(self):
-        for p in (self.path, self.path + "-wal", self.path + "-shm"):
+        stock_file = os.path.join(os.path.dirname(self.path), "stock.xlsx")
+        for p in (self.path, self.path + "-wal", self.path + "-shm", stock_file):
             if os.path.exists(p):
                 os.remove(p)
 
@@ -108,6 +109,35 @@ class AppTest(unittest.TestCase):
         self.assertNotIn("SZ Ocean", self.client.get("/messages", params={"cat": "supplier"}).text)
         for path in ("/shipments", "/updates", "/risk", "/approvals", "/chasers", "/health"):
             self.assertEqual(self.client.get(path).status_code, 200, path)
+
+    def test_stock_risk_upload_and_settings(self):
+        from web.tests.test_stock import make_workbook
+        self.login()
+        page = self.client.get("/risk").text
+        self.assertIn("Add the stock file", page)
+        xlsx = self.path + ".xlsx"
+        make_workbook(xlsx)
+        try:
+            with open(xlsx, "rb") as f:
+                r = self.client.post("/risk/upload", data={"csrf": self.csrf(page)},
+                                     files={"file": ("stock.xlsx", f.read())})
+        finally:
+            os.remove(xlsx)
+        self.assertEqual(r.status_code, 200)
+        page = r.text
+        self.assertIn("pick the live tabs", page)
+        r = self.client.post("/risk/settings", data={"csrf": self.csrf(page), "tabs": ["UK", "USA old"],
+                                                     "threshold": "60", "stock": "onhand", "sales": "max"})
+        self.assertIn("PMEC-001", r.text)            # 53 days: flagged
+        self.assertNotIn("PMPC-UK002", r.text)       # 142 days: only under "All SKUs"
+        self.assertIn("PMPC-UK002", self.client.get("/risk", params={"show": "all"}).text)
+        self.assertIn("SKUs under 60 days of stock", self.client.get("/").text)
+        bad = self.client.post("/risk/upload", data={"csrf": self.csrf(page)}, files={"file": ("x.xlsx", b"hello")})
+        self.assertEqual(bad.status_code, 400)
+        viewer = TestClient(create_app(self.path))
+        viewer.post("/login", data={"name": "Vic", "password": "correct horse 1"})
+        self.assertIn("PMEC-001", viewer.get("/risk").text)
+        self.assertNotIn("Save settings", viewer.get("/risk").text)
 
     def test_search_and_logout(self):
         self.login()

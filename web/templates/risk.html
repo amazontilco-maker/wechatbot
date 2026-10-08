@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Stock risk{% endblock %}
+{%- macro d(v) -%}{{ '–' if v is none else ('%.0f' % v) }}{%- endmacro -%}
+{%- macro n(v) -%}{{ '–' if v is none else ('{:,.0f}'.format(v)) }}{%- endmacro -%}
+{%- macro r(v) -%}{{ '–' if v is none else ('%.1f' % v if v < 10 else '%.0f' % v) }}{%- endmacro -%}
+{% block body %}
+{% set cfg = rep.cfg %}
+<div class="bar">
+  <h1>Stock risk</h1>
+  <span class="spacer"></span>
+  {% if rep.ready %}<span class="muted small">File updated {{ rep.mtime }}</span>{% endif %}
+</div>
+
+{% if rep.error %}<p class="error">{{ rep.error }}</p>{% endif %}
+
+{% if not rep.path.exists() %}
+  <div class="panel">
+    <h2>Add the stock file</h2>
+    {% if can_set %}
+      <p class="muted">Download the stock file from Google Drive as Excel (.xlsx) and upload it here. Upload again whenever it changes.</p>
+      {% include "risk_upload.html" %}
+    {% else %}<p class="muted">An approver or admin needs to upload the stock file first.</p>{% endif %}
+  </div>
+{% else %}
+  {% if rep.ready %}
+  <div class="kpis">
+    <a class="kpi bad" href="/risk?show=flagged"><b>{{ rep.counts.out }}</b><span>out of stock</span><small>under 1 day</small></a>
+    <a class="kpi warn" href="/risk?show=flagged"><b>{{ rep.counts.critical }}</b><span>critical</span><small>under {{ [30, cfg.threshold] | min }} days</small></a>
+    <a class="kpi amber" href="/risk?show=flagged"><b>{{ rep.counts.low }}</b><span>low</span><small>under {{ cfg.threshold }} days</small></a>
+    <a class="kpi" href="/risk?show=all"><b>{{ rep.counts.ok }}</b><span>OK</span><small>{{ rep.counts.nosales }} with no sales</small></a>
+  </div>
+
+  <form method="get" action="/risk" class="toolbar">
+    <select name="tab" aria-label="Market tab"><option value="">All tabs</option>
+      {% for t in rep.tabs %}<option value="{{ t.name }}"{% if tab == t.name %} selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
+    <select name="stock" aria-label="Stock counted">{% for k, v in stock_measures.items() %}<option value="{{ k }}"{% if cfg.stock == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select name="sales" aria-label="Sales used">{% for k, v in sales_measures.items() %}<option value="{{ k }}"{% if cfg.sales == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select name="show" aria-label="Rows shown"><option value="flagged"{% if show == 'flagged' %} selected{% endif %}>Under {{ cfg.threshold }} days</option><option value="all"{% if show == 'all' %} selected{% endif %}>All SKUs</option></select>
+    <button>Show</button>
+  </form>
+
+  <div class="tablewrap">
+  <table class="grid risk">
+    <tr><th>Tab</th><th>SKU</th><th>Product</th><th class="num" title="Average units sold per day">Sales/day</th>
+      <th class="num">Amazon</th><th class="num">Days</th><th class="num">On hand</th><th class="num">Days</th>
+      <th class="num">Inbound</th><th class="num">Days incl. inbound</th><th>Status</th></tr>
+    {% for x in rows %}{% set it = x.item %}
+    <tr class="lv-{{ x.level }}">
+      <td>{{ it.tab }}</td>
+      <td><b>{{ it.sku }}</b>{% if it.asin %}<br><small class="muted">{{ it.asin }}</small>{% endif %}</td>
+      <td>{{ it.product }}{% if it.remarks %}<br><small class="muted">{{ it.remarks[:80] }}</small>{% endif %}</td>
+      <td class="num" title="7-day {{ r(it.sales7) }} · 30-day {{ r(it.sales30) }}">{{ r(x.rate) }}</td>
+      <td class="num">{{ n(it.amazon) }}</td>
+      <td class="num {{ 'sel' if cfg.stock == 'amazon' }}">{{ d(x.days_amazon) }}</td>
+      <td class="num">{{ n(it.onhand) }}</td>
+      <td class="num {{ 'sel' if cfg.stock == 'onhand' }}">{{ d(x.days_onhand) }}</td>
+      <td class="num">{{ n(it.inbound) }}</td>
+      <td class="num {{ 'sel' if cfg.stock == 'inbound' }}">{{ d(x.days_total) }}</td>
+      <td><span class="pill lv-{{ x.level }}">{{ {'out': 'Out', 'critical': 'Critical', 'low': 'Low', 'ok': 'OK', 'nosales': 'No sales'}[x.level] }}</span></td>
+    </tr>
+    {% endfor %}
+    {% if not rows %}<tr><td colspan="11" class="muted center">No SKUs {% if show == 'flagged' %}under {{ cfg.threshold }} days{% endif %}.</td></tr>{% endif %}
+  </table>
+  </div>
+  <p class="hint">Days = units ÷ average daily sales from the sheet. The highlighted Days column decides the status. "No sales" = no sales figure (or 0.01), so days can't be worked out.</p>
+  {% for t in rep.tabs if t.problem %}<p class="error">Tab "{{ t.name }}": {{ t.problem }}</p>{% endfor %}
+  {% endif %}
+
+  {% if can_set %}
+  <details class="panel settings"{% if not rep.ready %} open{% endif %}>
+    <summary><h2>Settings{% if not rep.ready %}: pick the live tabs{% endif %}</h2></summary>
+    <form method="post" action="/risk/settings">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <p class="muted">Tick the tabs that are current (one per market). Tabs greyed out don't have SKU and sales columns.</p>
+      <div class="tabpick">
+        {% for name, ok in all_tabs %}
+        <label class="{{ '' if ok else 'off' }}"><input type="checkbox" name="tabs" value="{{ name }}"{% if name in cfg.tabs %} checked{% endif %}{% if not ok and name not in cfg.tabs %} disabled{% endif %}> {{ name }}</label>
+        {% endfor %}
+      </div>
+      <div class="row3">
+        <label>Flag under (days) <input name="threshold" type="number" min="1" max="365" value="{{ cfg.threshold }}"></label>
+        <label>Count stock as <select name="stock">{% for k, v in stock_measures.items() %}<option value="{{ k }}"{% if cfg.stock == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        <label>Sales per day <select name="sales">{% for k, v in sales_measures.items() %}<option value="{{ k }}"{% if cfg.sales == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      </div>
+      <button>Save settings</button>
+    </form>
+    <hr>
+    {% if from_pc %}<p class="muted">The file is read from the office PC: {{ rep.path }}</p>
+    {% else %}<p class="muted">Upload a newer file:</p>{% include "risk_upload.html" %}{% endif %}
+  </details>
+  {% endif %}
+{% endif %}
+{% endblock %}

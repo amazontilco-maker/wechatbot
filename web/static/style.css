@@ -136,3 +136,35 @@ table.grid th, table.grid td { text-align: left; padding: 8px 10px; border-botto
   .conv-head .back { display: inline; }
   .msg { max-width: 90%; }
 }
+
+/* stock risk */
+.small { font-size: 12px; }
+.kpi.bad b { color: #d83931; }
+.kpi.warn b { color: #de7802; }
+.kpi.amber b { color: #b8860b; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.toolbar select { width: auto; }
+.tablewrap { overflow-x: auto; border-radius: 10px; }
+table.risk td.num, table.risk th.num { text-align: right; white-space: nowrap; }
+table.risk td.sel { font-weight: 700; background: #f5f8ff; }
+table.risk tr.lv-out td:first-child { box-shadow: inset 3px 0 #d83931; }
+table.risk tr.lv-critical td:first-child { box-shadow: inset 3px 0 #de7802; }
+table.risk tr.lv-low td:first-child { box-shadow: inset 3px 0 #e8b400; }
+.pill.lv-out { background: #fde2e1; color: #b42318; }
+.pill.lv-critical { background: #ffead1; color: #b54708; }
+.pill.lv-low { background: #fff6cc; color: #8a6100; }
+.pill.lv-ok { background: #e4f6ec; color: #18794e; }
+.settings { margin-top: 16px; }
+.settings summary { cursor: pointer; }
+.settings summary h2 { display: inline; }
+.settings form { display: grid; gap: 10px; margin-top: 10px; }
+.settings form button { justify-self: start; }
+.tabpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; }
+.tabpick label { display: flex; gap: 6px; align-items: center; }
+.tabpick input { width: auto; }
+.tabpick .off { color: #b0b4ba; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.upload { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.upload input { width: auto; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+@media (max-width: 760px) { .row3 { grid-template-columns: 1fr; } }

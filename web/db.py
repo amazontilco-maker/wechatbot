@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS user_reads (
   user_id INTEGER NOT NULL, conv_id TEXT NOT NULL, last_read_ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, conv_id));
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '');
@@ -29,7 +30,8 @@ def now_ms():
 
 
 def connect(path=None):
-    db = open_db(path)
+    # one connection per web request; async handlers may use it from another thread, one step at a time
+    db = open_db(path, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA busy_timeout = 10000")   # the scanner may be writing at the same moment
     if str(path) != ":memory:":
@@ -48,4 +50,15 @@ def can(user, role):
 def audit(db, user, action, detail=""):
     db.execute("INSERT INTO audit (ts, user, action, detail) VALUES (?, ?, ?, ?)",
                (now_ms(), user, action, detail))
+    db.commit()
+
+
+def get_setting(db, key, default=""):
+    row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_setting(db, key, value):
+    db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+               (key, str(value)))
     db.commit()

@@ -1,4 +1,4 @@
-"""Team web app for the supplier WeChat inbox.
+r"""Team web app for the supplier WeChat inbox.
 
   py -m web serve                      start the app on http://127.0.0.1:8000
   py -m web adduser NAME ROLE          add a login (asks for the password); ROLE = viewer|sender|approver|admin
@@ -6,6 +6,9 @@
   py -m web passwd NAME                set a new password (logs them out everywhere)
   py -m web disable NAME               block a login (logs them out); `enable NAME` undoes it
   py -m web users                      list logins
+  py -m web stockfile "G:\My Drive\stock.xlsx"   read the stock file from this path (e.g. Google Drive
+                                       for desktop); `stockfile --upload` goes back to uploading it in the app
+  py -m web stockcheck FILE.xlsx       show which columns each stock tab has and the most urgent SKUs
 
 Roles: viewer reads chats; sender also writes notes and replies (sending needs approval);
 approver also approves & sends and sees the log; admin also manages logins.
@@ -15,7 +18,7 @@ import getpass
 import sys
 
 from . import auth
-from .db import ROLES, audit, connect, now_ms
+from .db import ROLES, audit, connect, now_ms, set_setting
 
 
 def ask_password():
@@ -96,6 +99,43 @@ def cmd_users(args):
         print("No logins yet. Add one with: py -m web adduser YourName admin")
 
 
+def cmd_stockfile(args):
+    from pathlib import Path
+    from . import stock
+    db = connect(args.db)
+    if args.upload:
+        set_setting(db, "stock_path", "")
+        print("The app now uses the file uploaded on the Stock risk page.")
+        return
+    if not args.path:
+        sys.exit('Give the file path in quotes, e.g. py -m web stockfile "G:\\My Drive\\stock.xlsx"')
+    path = Path(args.path.strip('"')).expanduser().resolve()
+    if not path.is_file():
+        sys.exit(f"No file at {path}")
+    tabs = stock.tab_names(path)
+    set_setting(db, "stock_path", str(path))
+    audit(db, "(PC)", "stock file", f"path {path}")
+    print(f"The app now reads {path}")
+    print("Stock tabs found: " + ", ".join(n for n, ok in tabs if ok))
+
+
+def cmd_stockcheck(args):
+    from string import ascii_uppercase as AZ
+    from . import stock
+    letter = lambda i: (AZ[i // 26 - 1] if i >= 26 else "") + AZ[i % 26]
+    names = [n for n, ok in stock.tab_names(args.path) if ok or args.all]
+    for tab in stock.read_tabs(args.path, names):
+        print(f"\n== {tab.name}: {len(tab.items)} SKUs {('- ' + tab.problem) if tab.problem else ''}")
+        print("   " + ", ".join(f"{role}={letter(i)}" for role, i in tab.columns.items()))
+        rows, counts = stock.risk_rows([tab], threshold=args.days)
+        print(f"   out {counts['out']}, critical {counts['critical']}, low {counts['low']}, "
+              f"ok {counts['ok']}, no sales {counts['nosales']}")
+        for r in rows[:5]:
+            it = r["item"]
+            if r["level"] in ("out", "critical", "low"):
+                print(f"   row {it.row}: {it.sku} sales/day {r['rate']} on hand {it.onhand} -> {r['days']:.0f} days")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="web", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -119,6 +159,15 @@ def main(argv=None):
         x.add_argument("name")
         x.set_defaults(fn=fn)
     sub.add_parser("users").set_defaults(fn=cmd_users)
+    f = sub.add_parser("stockfile")
+    f.add_argument("path", nargs="?")
+    f.add_argument("--upload", action="store_true")
+    f.set_defaults(fn=cmd_stockfile)
+    k = sub.add_parser("stockcheck")
+    k.add_argument("path")
+    k.add_argument("--days", type=int, default=60)
+    k.add_argument("--all", action="store_true", help="also tabs that don't look like stock tabs")
+    k.set_defaults(fn=cmd_stockcheck)
     args = p.parse_args(argv)
     args.fn(args)
 

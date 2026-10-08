@@ -7,7 +7,7 @@
   <a class="kpi" href="/messages?new=1"><b>{{ new_total }}</b><span>new messages</span><small>in {{ chats_waiting }} chat{{ '' if chats_waiting == 1 else 's' }}</small></a>
   <a class="kpi" href="/approvals"><b>–</b><span>replies to approve</span><small>step 2</small></a>
   <a class="kpi" href="/updates"><b>–</b><span>ETA updates to review</span><small>M3</small></a>
-  <a class="kpi" href="/risk"><b>–</b><span>SKUs at stockout risk</span><small>M6</small></a>
+  <a class="kpi{{ ' amber' if risk.ready and risk.flagged }}" href="/risk"><b>{{ risk.flagged if risk.ready else '–' }}</b><span>SKUs under {{ risk.cfg.threshold }} days of stock</span><small>{% if risk.ready %}{{ risk.counts.out }} out, {{ risk.counts.critical }} critical{% else %}set up in Stock risk{% endif %}</small></a>
 </div>
 <div class="cols">
   <section class="panel">
