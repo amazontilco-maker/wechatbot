@@ -125,7 +125,7 @@ table.grid th, table.grid td { text-align: left; padding: 8px 10px; border-botto
   .side .logo, .side .group, .me .who, .me .avatar { display: none; }
   .side nav { flex-direction: row; justify-content: space-around; overflow-x: auto; }
   .side nav a { flex-direction: column; gap: 0; font-size: 10px; padding: 4px 6px; }
-  .side nav a[href="/search"], .side nav a[href="/health"], .side nav a[href="/audit"], .side nav a[href="/updates"] { display: none; }
+  .side nav a[href="/search"], .side nav a[href="/health"], .side nav a[href="/audit"], .side nav a[href="/updates"], .side nav a[href="/chasers"] { display: none; }
   .me { border: 0; padding: 0 4px; }
   main { padding: 16px; }
   .kpis { grid-template-columns: 1fr 1fr; }
@@ -196,3 +196,20 @@ button.danger { background: #d83931; }
 .resetform input { width: auto; }
 .resetform button { justify-self: start; }
 .pill.lv-nostock { background: #e4e6eb; color: #1f2329; }
+
+/* SKU generator */
+.panel + .panel, .made + .panel { margin-top: 14px; }
+h3 { font-size: 14px; margin: 16px 0 8px; }
+.skuform { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 12px; align-items: end; }
+.skuform button { justify-self: start; }
+.made { border-color: #9bd7b5; background: #f1fbf5; margin-bottom: 14px; }
+.made p { margin: 0 0 6px; }
+.bigsku { font: 700 24px/1.3 ui-monospace, Consolas, monospace; letter-spacing: .03em; margin-bottom: 10px; }
+.skuparts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.skuparts div { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; min-width: 110px; }
+.skuparts b { font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
+.skuparts span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.decoded { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; background: #fafbfc; }
+.cancel summary { cursor: pointer; color: var(--bad); font-size: 12px; }
+.cancel form { display: grid; gap: 6px; margin-top: 6px; min-width: 160px; }
+@media (max-width: 760px) { .skuform { grid-template-columns: 1fr; } }

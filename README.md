@@ -55,6 +55,11 @@ daily sales, columns found by header per tab) and warns when nobody has edited t
 `py -m web sheetcheck` reads it once and prints what it found. Without Google, an .xlsx can be uploaded instead
 (`py -m web stockcheck file.xlsx` checks one). Tests: `py -m unittest discover -s web/tests -t .`
 
+SKU generator (sidebar): makes SKUs to one standard, `BRAND-PRODUCT-MANUFACTURER-REASON-NUMBER`
+(e.g. `TC-IPW-M03-N-0042`; see `web/sku.py`). Each manufacturer keeps one number, each product one code, and
+the running number is never reused. The search on the same page decodes a SKU, shows who made it, and whether
+it is in use (found in the ticked stock sheet tabs), not used yet, or cancelled.
+
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 
 ## Limits (known)

@@ -20,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 
 from scanner.store import DEFAULT_DB
 
-from . import auth, gsheet, stock
+from . import auth, gsheet, sku as skus, stock
 from .db import CATEGORIES, audit, can, connect, get_setting, now_ms, set_setting
 
 HERE = Path(__file__).resolve().parent
@@ -424,6 +424,62 @@ def create_app(db_path=None, background=True, sheets_client=None):
         if get_setting(db, "sheet_id"):
             await run_in_threadpool(sync.refresh)   # read the newly ticked tabs now
         return RedirectResponse("/risk", status_code=303)
+
+    # ---------- SKU generator ----------
+    def sheet_skus(db):
+        """SKUs in the ticked stock tabs -> (tab, product): what counts as 'in use'."""
+        found = {}
+        try:
+            for tab in stock_report(db)["tabs"]:
+                for it in tab.items:
+                    found.setdefault(skus.normalize(it.sku), (tab.name, it.product))
+        except Exception:   # the SKU page must work even when the stock sheet can't be read
+            pass
+        return found
+
+    def sku_page(request, db, user, status_code=200, **ctx):
+        q = skus.clean(request.query_params.get("q", ""))
+        in_sheet = sheet_skus(db)
+        rows = skus.search(db, q)
+        decoded = skus.decode(db, q) if q else None
+        key = skus.normalize(q)
+        sheet_hits = [(k, v) for k, v in in_sheet.items() if q and key in k and not skus.get(db, k)][:20]
+        makers = [r[0] for r in db.execute("SELECT name FROM manufacturers ORDER BY name")]
+        ctx.setdefault("form", {})
+        return page(request, "sku.html", status_code, section="sku", q=q, rows=rows, decoded=decoded,
+                    in_sheet=in_sheet, sheet_hits=sheet_hits, makers=makers, brands=skus.BRANDS,
+                    reasons=skus.REASONS, can_make=can(user, "sender"), sheet_linked=bool(in_sheet), **ctx)
+
+    @app.get("/sku", response_class=HTMLResponse)
+    def sku_home(request: Request, new: str = "", user=Depends(current), db=Depends(get_db)):
+        return sku_page(request, db, user, made=skus.decode(db, new) if new and skus.get(db, new) else None)
+
+    @app.post("/sku/generate")
+    def sku_generate(request: Request, brand: str = Form(""), product_name: str = Form(""),
+                     product_code: str = Form(""), manufacturer: str = Form(""), reason: str = Form(""),
+                     reason_note: str = Form(""), csrf: str = Form(""),
+                     user=Depends(needs("sender")), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        try:
+            row = skus.generate(db, user["name"], brand, product_name, product_code, manufacturer, reason,
+                                reason_note, taken=sheet_skus(db))
+        except skus.SkuError as e:
+            form = {"brand": brand, "product_name": product_name, "product_code": product_code,
+                    "manufacturer": manufacturer, "reason": reason, "reason_note": reason_note}
+            return sku_page(request, db, user, 400, error=str(e), form=form)
+        audit(db, user["name"], "sku generated", f"{row['sku']}: {row['product_name']} / {row['manufacturer']}")
+        return RedirectResponse(f"/sku?new={quote(row['sku'], safe='')}", status_code=303)
+
+    @app.post("/sku/cancel")
+    def sku_cancel(request: Request, sku: str = Form(""), note: str = Form(""), csrf: str = Form(""),
+                   user=Depends(needs("sender")), db=Depends(get_db)):
+        check_csrf(request, csrf)
+        try:
+            skus.cancel(db, user["name"], sku, note)
+        except skus.SkuError as e:
+            return sku_page(request, db, user, 400, error=str(e))
+        audit(db, user["name"], "sku cancelled", f"{skus.normalize(sku)}: {skus.clean(note, 200)}")
+        return RedirectResponse(f"/sku?q={quote(skus.normalize(sku), safe='')}", status_code=303)
 
     # sections that later milestones fill in; each page says what will appear there
     SOON = {
