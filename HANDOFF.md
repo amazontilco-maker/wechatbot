@@ -4,8 +4,7 @@ For whoever continues this work (a person or a new Claude Code chat). Start a ne
 **"Read HANDOFF.md, ROADMAP.md, README.md and CLAUDE.md. Let's continue."**
 
 ## Where everything is
-- **Source code**: GitHub `amazontilco-maker/wechatbot`. All work described here is on the branch
-  `claude/tender-pasteur-wckt5m`; it is **not merged into `main` yet**.
+- **Source code**: GitHub `amazontilco-maker/wechatbot`, branch `main` (everything described here is merged).
 - **Office PC (Windows)**: the same code at `C:\Users\Umer\wechatbot` (`%USERPROFILE%\wechatbot`).
   Python is run with `py`; the adb path is saved in `WB_ADB`.
 - **Live data, only on the office PC, never in GitHub**: `C:\Users\Umer\wechatbot\data\`
@@ -75,7 +74,7 @@ wechatbot/
   reply waits for an approver; an approver or admin sends their own reply in one click. Every send logged.
 - **M1 step 3**: WeChat scans every 15 minutes through the same queue; Health page.
 - **M1 step 4**: Cloudflare Tunnel (team link from anywhere) + a page to manage logins.
-- **M1b** (on `main`'s ROADMAP): reading pictures and files in chats.
+- **M1b**: reading pictures and files in chats (see ROADMAP.md).
 - **M2-M6**: see ROADMAP.md. Decided for later: pull sales and stock from Amazon SP-API (and Walmart)
   instead of typing them into the sheet.
 
