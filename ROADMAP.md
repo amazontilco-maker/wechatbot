@@ -14,7 +14,11 @@ Merge to `main` when a milestone is done and tested on the real phone.
   Windows PC, driven over ADB with screenshots + local OCR. WeChat blocks web login and Android
   accessibility dumps for this account, so this is the only reading method that works. No Windows VM.
 - **A person approves every outgoing message.** No bulk or unattended sending (account-ban risk).
-  Claude only reads, matches and drafts.
+  Claude only reads, matches and drafts. A sender's reply waits for an approver; an approver or
+  admin who writes a reply sends it with one click (logged as requested + approved by them).
+- **The app is an operations workspace, not a WeChat copy**: sidebar Today / Shipments / ETA updates /
+  Stock risk / Messages / Approvals / ETA chasers / Search / Health / Log. Each chat is labelled
+  supplier / forwarder / internal / other; forwarder chats feed M3.
 - **Live web app, accessible from anywhere** with a specific link and a login. It runs on the office
   PC (next to the phone) and is published through an HTTPS tunnel (Cloudflare Tunnel; no open
   ports, works behind office routers). Optionally Cloudflare Access in front (email one-time code).
@@ -45,6 +49,9 @@ Merge to `main` when a milestone is done and tested on the real phone.
   phone queue sends → status Sent / Failed shown on the message.
 - Background scanner on a schedule (e.g. every 15 min) through the same phone queue.
 - Health page: phone connected, WeChat logged in, last scan, queue length.
+- Build steps: 1 logins + workspace (Today, Messages two-pane, chat labels, search, notes) — done;
+  2 reply box + @tag + request / approve & send through the phone queue; 3 scheduled scans + health;
+  4 Cloudflare Tunnel + admin page for logins.
 
 **M1b — Pictures and files** (tracking numbers, B/L, packing lists, schedules)
 - Today a picture is only the OCR of its in-chat preview (`[image text]`, often partial) and files
@@ -80,7 +87,10 @@ Merge to `main` when a milestone is done and tested on the real phone.
 - Find shipments not confirmed in N days, grouped by forwarder; draft one message per group
   listing the shipments; approve & send via M1; re-ask next morning if no reply.
 
-**M6 — Stockout risk**
+**M6 — Stockout risk** (first version built early, in the web app: Stock risk page reads the .xlsx stock
+Google Sheet every 15 min via a read-only service account, flags SKUs under N days of stock (default 60) by
+Amazon / on hand / on hand + inbound, warns when the sheet hasn't been edited for N days.
+Later: pull sales, FBA/AWD stock and inbound from Amazon SP-API (and Walmart) so nobody types them.)
 - From the sheet's sales and stock columns: runs-out date vs ETA, flag gaps, suggest options
   (air, AWD/3PL transfer, slow sales). Drafts only.
 

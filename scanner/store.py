@@ -9,11 +9,11 @@ from pathlib import Path
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "wechat.db"
 
 
-def open_db(path=None):
+def open_db(path=None, check_same_thread=True):
     path = path or os.environ.get("WB_DB") or DEFAULT_DB
     if str(path) != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(str(path))
+    db = sqlite3.connect(str(path), check_same_thread=check_same_thread)
     db.executescript("""
         CREATE TABLE IF NOT EXISTS convs (
           id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,

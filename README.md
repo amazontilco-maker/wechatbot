@@ -38,6 +38,28 @@ It opens the chat, shows the last messages and your text, and waits for you to t
 
 In a group, `--tag "John"` @mentions a member: it types `@`, picks the member from WeChat's list (scrolling it if needed), then types the text. If the name isn't in the list or matches several members, it undoes the `@` and sends nothing.
 
+## Team web app (M1, in progress)
+`py -m web serve` runs the team inbox on http://127.0.0.1:8000 (same `data/wechat.db`). Every person has their own login:
+```
+py -m pip install -r web/requirements.txt
+py -m web adduser YourName admin
+py -m web serve
+```
+Roles: viewer (reads), sender (+ notes, replies that need approval), approver (+ approve & send, activity log), admin (+ logins).
+Manage logins with `py -m web users|setrole|passwd|disable|enable`.
+Stock risk reads the stock Google Sheet by itself every 15 minutes (read-only, through a Google service
+account: a robot login the sheet is shared with as Viewer). Set up once on the office PC:
+`py -m web google key.json` (prints the robot email to share the sheet with), then paste the sheet link on the
+Stock risk page (Settings) and tick the live tabs. It flags SKUs under 60 days of stock (days = units / average
+daily sales, columns found by header per tab) and warns when nobody has edited the sheet for 2 days.
+`py -m web sheetcheck` reads it once and prints what it found. Without Google, an .xlsx can be uploaded instead
+(`py -m web stockcheck file.xlsx` checks one). Tests: `py -m unittest discover -s web/tests -t .`
+
+SKU generator (sidebar): makes SKUs to one standard, `BRAND-PRODUCT-MANUFACTURER-REASON-NUMBER`
+(e.g. `TC-IPW-M03-N-0042`; see `web/sku.py`). Each manufacturer keeps one number, each product one code, and
+the running number is never reused. The search on the same page decodes a SKU, shows who made it, and whether
+it is in use (found in the ticked stock sheet tabs), not used yet, or cancelled.
+
 Then open Claude Code in this folder and say **"brief me"**. Claude reads the DB with `node src/cli.js digest` (see CLAUDE.md).
 
 ## Limits (known)
