@@ -440,15 +440,20 @@ def create_app(db_path=None, background=True, sheets_client=None):
     def sku_page(request, db, user, status_code=200, **ctx):
         q = skus.clean(request.query_params.get("q", ""))
         in_sheet = sheet_skus(db)
-        rows = skus.search(db, q)
+        skus.mark_used(db, in_sheet)
+        # the list only tracks SKUs never adopted into the stock sheet; adopted ones are found by searching
+        rows = skus.search(db, q, used=False)
+        adopted = skus.search(db, q, used=True) if q else []
         decoded = skus.decode(db, q) if q else None
         key = skus.normalize(q)
         sheet_hits = [(k, v) for k, v in in_sheet.items() if q and key in k and not skus.get(db, k)][:20]
         makers = [r[0] for r in db.execute("SELECT name FROM manufacturers ORDER BY name")]
+        adopted_total = db.execute("SELECT COUNT(*) FROM skus WHERE used_ts IS NOT NULL").fetchone()[0]
         ctx.setdefault("form", {})
-        return page(request, "sku.html", status_code, section="sku", q=q, rows=rows, decoded=decoded,
-                    in_sheet=in_sheet, sheet_hits=sheet_hits, makers=makers, brands=skus.BRANDS,
-                    reasons=skus.REASONS, can_make=can(user, "sender"), sheet_linked=bool(in_sheet), **ctx)
+        return page(request, "sku.html", status_code, section="sku", q=q, rows=rows, adopted=adopted,
+                    adopted_total=adopted_total, decoded=decoded, sheet_hits=sheet_hits, makers=makers,
+                    brands=skus.BRANDS, reasons=skus.REASONS, can_make=can(user, "sender"),
+                    sheet_linked=bool(in_sheet), **ctx)
 
     @app.get("/sku", response_class=HTMLResponse)
     def sku_home(request: Request, new: str = "", user=Depends(current), db=Depends(get_db)):

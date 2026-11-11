@@ -144,6 +144,21 @@ class SkuPageTest(unittest.TestCase):
                 "product_code": "IPW", "manufacturer": "Ningbo Cool Co", "reason": "N"}
         r = client.post("/sku/generate", data=form)
         self.assertIn("TC-IPW-M01-N-0002", r.text)        # 0001 is already in the sheet, so it was skipped
+        self.assertIn("not used yet (1)", client.get("/sku").text)
+        # the team starts using the new SKU: it appears in the stock sheet
+        rows.append(["Insulated Ice Pack", "TC-IPW-M01-N-0002", "B0C2", 2, 2, 100, "", "", "", 0, 100])
+        client.app.state.sync.refresh()
+        page = client.get("/sku").text
+        self.assertIn("not used yet (0)", page)                         # gone from the history
+        self.assertNotIn("TC-IPW-M01-N-0002", page)
+        found = client.get("/sku", params={"q": "TC-IPW-M01-N-0002"}).text
+        self.assertIn("Adopted in the stock sheet", found)              # still decodable by search
+        self.assertIn("Ningbo Cool Co", found)
+        self.assertIn("TC-IPW-M01-N-0002", client.get("/sku", params={"q": "ice pack"}).text)
+        client.post("/risk/reset", data={"csrf": self.csrf(client), "confirm": "yes"})
+        self.assertIn("not used yet (0)", client.get("/sku").text)      # stays adopted without the sheet
+        client.post("/risk/sheet", data={"csrf": self.csrf(client), "link": SID})
+        client.post("/risk/settings", data={"csrf": self.csrf(client), "tabs": ["UK"]})
         old = client.get("/sku", params={"q": "PMEC"}).text
         self.assertIn("Existing SKUs from the stock sheet", old)
         self.assertIn("PMEC-001", old)

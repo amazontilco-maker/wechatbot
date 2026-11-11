@@ -213,3 +213,8 @@ h3 { font-size: 14px; margin: 16px 0 8px; }
 .cancel summary { cursor: pointer; color: var(--bad); font-size: 12px; }
 .cancel form { display: grid; gap: 6px; margin-top: 6px; min-width: 160px; }
 @media (max-width: 760px) { .skuform { grid-template-columns: 1fr; } }
+.copybtn { font: 500 13px system-ui, sans-serif; letter-spacing: 0; vertical-align: middle; padding: 4px 10px; }
+[hidden] { display: none !important; }
+.history { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.history > summary { cursor: pointer; font-weight: 600; }
+.pill { white-space: nowrap; }

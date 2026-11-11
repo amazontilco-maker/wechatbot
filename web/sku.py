@@ -27,8 +27,29 @@ CREATE TABLE IF NOT EXISTS skus (
   manufacturer_id INTEGER NOT NULL REFERENCES manufacturers(id), reason TEXT NOT NULL,
   reason_note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
   created_by TEXT NOT NULL, created_ts INTEGER NOT NULL,
-  cancelled_by TEXT NOT NULL DEFAULT '', cancelled_ts INTEGER, cancel_note TEXT NOT NULL DEFAULT '');
+  cancelled_by TEXT NOT NULL DEFAULT '', cancelled_ts INTEGER, cancel_note TEXT NOT NULL DEFAULT '',
+  used_ts INTEGER, used_tab TEXT NOT NULL DEFAULT '');   -- first seen in the stock sheet: adopted for good
 """
+
+
+def migrate(db):
+    cols = {r[1] for r in db.execute("PRAGMA table_info(skus)")}
+    if "used_ts" not in cols:
+        db.execute("ALTER TABLE skus ADD COLUMN used_ts INTEGER")
+        db.execute("ALTER TABLE skus ADD COLUMN used_tab TEXT NOT NULL DEFAULT ''")
+
+
+def mark_used(db, in_sheet):
+    """Remember generated SKUs that now appear in the stock sheet (in_sheet: SKU -> (tab, product)).
+    Once adopted a SKU stays 'in use', even if the sheet is later unlinked. Returns how many were new."""
+    new = 0
+    for row in db.execute("SELECT sku FROM skus WHERE used_ts IS NULL AND status = 'active'").fetchall():
+        if row[0] in in_sheet:
+            new += db.execute("UPDATE skus SET used_ts = ?, used_tab = ? WHERE sku = ?",
+                              (now_ms(), in_sheet[row[0]][0], row[0])).rowcount
+    if new:
+        db.commit()
+    return new
 
 SELECT = ("SELECT s.*, m.name AS manufacturer FROM skus s JOIN manufacturers m ON m.id = s.manufacturer_id ")
 
@@ -130,14 +151,16 @@ def cancel(db, user, sku, note):
         raise SkuError("That SKU doesn't exist or is already cancelled.")
 
 
-def search(db, q, limit=100):
-    """Generated SKUs matching q in the SKU, product, manufacturer or creator; newest first."""
+def search(db, q, limit=100, used=None):
+    """Generated SKUs matching q in the SKU, product, manufacturer or creator; newest first.
+    used: None = all, False = only never adopted into the stock sheet, True = only adopted."""
     q = clean(q)
+    where = {None: "1", False: "s.used_ts IS NULL", True: "s.used_ts IS NOT NULL"}[used]
     if not q:
-        return db.execute(SELECT + "ORDER BY s.id DESC LIMIT ?", (limit,)).fetchall()
+        return db.execute(SELECT + f"WHERE {where} ORDER BY s.id DESC LIMIT ?", (limit,)).fetchall()
     like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    return db.execute(SELECT + "WHERE s.sku LIKE ? ESCAPE '\\' OR s.product_name LIKE ? ESCAPE '\\' "
-                      "OR m.name LIKE ? ESCAPE '\\' OR s.created_by LIKE ? ESCAPE '\\' ORDER BY s.id DESC LIMIT ?",
+    return db.execute(SELECT + f"WHERE {where} AND (s.sku LIKE ? ESCAPE '\\' OR s.product_name LIKE ? ESCAPE '\\' "
+                      "OR m.name LIKE ? ESCAPE '\\' OR s.created_by LIKE ? ESCAPE '\\') ORDER BY s.id DESC LIMIT ?",
                       (like, like, like, like, limit)).fetchall()
 
 

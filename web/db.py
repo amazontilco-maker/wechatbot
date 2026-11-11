@@ -37,8 +37,9 @@ def connect(path=None):
     if str(path) != ":memory:":
         db.execute("PRAGMA journal_mode = WAL")
     db.executescript(SCHEMA)
-    from .sku import SCHEMA as SKU_SCHEMA   # here, not at the top: sku.py imports this module
-    db.executescript(SKU_SCHEMA)
+    from . import sku   # here, not at the top: sku.py imports this module
+    db.executescript(sku.SCHEMA)
+    sku.migrate(db)
     if "category" not in {r[1] for r in db.execute("PRAGMA table_info(convs)")}:
         db.execute("ALTER TABLE convs ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
     return db
